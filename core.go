@@ -539,9 +539,10 @@ func ParseIloc(data []byte, cStart, cEnd int) (*Iloc, error) {
 				break
 			}
 			if extentWidth == 0 {
-				// Zero-byte extents never advance pos, so nothing bounds
-				// how many a crafted file can declare.
-				if zeroWidthExtents++; zeroWidthExtents > len(data) {
+				// Zero-byte extents never advance pos, so only the
+				// 65535-per-item count bounds how many a crafted file can
+				// declare.
+				if zeroWidthExtents++; zeroWidthExtents > maxZeroWidthExtents {
 					zeroWidthExtents += int(extentCount) - j - 1 // count the rest; store none
 					break
 				}
@@ -563,12 +564,17 @@ func ParseIloc(data []byte, cStart, cEnd int) (*Iloc, error) {
 	if tooWide {
 		return nil, boxParseErrorf("iloc has a field value that doesn't fit in 64 bits")
 	}
-	if zeroWidthExtents > len(data) {
-		return nil, boxParseErrorf("iloc declares %d zero-width extents, more than the data has bytes (%d)",
-			zeroWidthExtents, len(data))
+	if zeroWidthExtents > maxZeroWidthExtents {
+		return nil, boxParseErrorf("iloc declares %d zero-width extents, more than the %d this port will hold in memory",
+			zeroWidthExtents, maxZeroWidthExtents)
 	}
 	return iloc, nil
 }
+
+// maxZeroWidthExtents bounds how many zero-width extents ParseIloc will
+// materialize (docs/COMPAT.md D7): about 40 MB. Reaching it takes 17+ items
+// each declaring 65535 empty extents - Python would need gigabytes.
+const maxZeroWidthExtents = 1 << 20
 
 // errIlocFieldOverflow is put_int's error for a value wider than its field.
 // val is a decimal string because a patched value may exceed 64 bits.

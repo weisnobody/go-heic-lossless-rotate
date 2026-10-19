@@ -72,17 +72,27 @@ func TestParseIlocWideFields(t *testing.T) {
 
 func TestParseIlocExtentCap(t *testing.T) {
 	// COMPAT D7: zero-width fields + huge counts must not build billions of
-	// extents. v1, all widths 0, 4 items each claiming 65535 extents.
-	content := []byte{1, 0, 0, 0, 0x00, 0x00, 0, 4}
-	for range 4 {
-		content = append(content, 0, 1, 0, 0, 0, 0, 0xff, 0xff) // id, constr, dri, extent_count
+	// extents. v1, all widths 0, n items each claiming 65535 extents.
+	content := func(items int) []byte {
+		c := []byte{1, 0, 0, 0, 0x00, 0x00, byte(items >> 8), byte(items)}
+		for range items {
+			c = append(c, 0, 1, 0, 0, 0, 0, 0xff, 0xff) // id, constr, dri, extent_count
+		}
+		return c
 	}
-	_, err := ParseIloc(content, 0, len(content))
-	wantBoxParseError(t, err, "iloc declares 262140 zero-width extents, more than the data has bytes (40)")
+	// 4 x 65535 is held (Python parses it too)...
+	ok := content(4)
+	if iloc, err := ParseIloc(ok, 0, len(ok)); err != nil || len(iloc.Items[3].Extents) != 65535 {
+		t.Fatalf("4 items: %v", err)
+	}
+	// ...17 x 65535 is past the cap.
+	big := content(17)
+	_, err := ParseIloc(big, 0, len(big))
+	wantBoxParseError(t, err, "iloc declares 1114095 zero-width extents, more than the 1048576 this port will hold in memory")
 
 	// The refusal is deferred: where Python's own parse fails, its error wins.
-	_, err = ParseIloc(content, 0, len(content)-1)
-	wantBoxParseError(t, err, "iloc parse mismatch: consumed 40, expected 39")
+	_, err = ParseIloc(big, 0, len(big)-1)
+	wantBoxParseError(t, err, "iloc parse mismatch: consumed 144, expected 143")
 }
 
 func TestParseIlocOverrunMatchesPython(t *testing.T) {
