@@ -17,8 +17,11 @@ package heicrotate
 
 import (
 	"fmt"
+	"iter"
 	"strconv"
 	"strings"
+
+	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
 )
 
 // BoxParseError reports malformed or unsupported container structure
@@ -96,6 +99,155 @@ var ProvenanceUUID = [16]byte{
 	0xe8, 0x50, 0x77, 0x7c, 0x34, 0x16, 0x50, 0xa4,
 	0x9f, 0xa8, 0x64, 0x93, 0xcf, 0xc1, 0x3f, 0x31,
 }
+
+// ---------------------------------------------------------------------------
+// Generic ISOBMFF box reading helpers (read-only)
+// ---------------------------------------------------------------------------
+
+// BoxHeader is read_box_header's (start, header_len, content_start,
+// content_end, boxtype) tuple. ContentEnd may be less than ContentStart for
+// a malformed box whose declared size is smaller than its own header - as in
+// Python, that is not an error by itself.
+type BoxHeader struct {
+	Start, HeaderLen, ContentStart, ContentEnd int
+	Type                                       [4]byte
+}
+
+// Is reports whether the box's type is boxtype (a 4-character type code).
+func (h BoxHeader) Is(boxtype string) bool { return string(h.Type[:]) == boxtype }
+
+// ReadBoxHeader parses the box header at pos (← read_box_header). ok is
+// false at EOF (fewer than 8 bytes left), which Python reports as None.
+func ReadBoxHeader(data []byte, pos int) (hdr BoxHeader, ok bool, err error) {
+	if pos+8 > len(data) {
+		return BoxHeader{}, false, nil
+	}
+	size32, _ := unpackU32(data, pos)
+	var boxtype [4]byte
+	copy(boxtype[:], data[pos+4:pos+8])
+	size := uint64(size32)
+	headerLen := 8
+	if size == 1 {
+		if pos+16 > len(data) {
+			return BoxHeader{}, false, boxParseErrorf("truncated 64-bit box size")
+		}
+		size, _ = unpackU64(data, pos+8)
+		headerLen = 16
+	} else if size == 0 {
+		size = uint64(len(data) - pos) // extends to EOF
+	}
+	if size > uint64(len(data)-pos) {
+		return BoxHeader{}, false, boxParseErrorf("box %s at %d claims size %d beyond EOF",
+			pyfmt.BytesRepr(boxtype[:]), pos, size)
+	}
+	return BoxHeader{
+		Start:        pos,
+		HeaderLen:    headerLen,
+		ContentStart: pos + headerLen,
+		ContentEnd:   pos + int(size),
+		Type:         boxtype,
+	}, true, nil
+}
+
+// errZeroSizeBox is the error for a box whose 64-bit size is 0: it never
+// advances, so Python's iteration over it loops forever (docs/COMPAT.md D6).
+func errZeroSizeBox(hdr BoxHeader) *BoxParseError {
+	return boxParseErrorf("box %s at %d has a 64-bit size of 0 and cannot be stepped over",
+		pyfmt.BytesRepr(hdr.Type[:]), hdr.Start)
+}
+
+// IterBoxes yields each immediate child box header in data[start:end]
+// (← iter_boxes). Like Python's generator it is lazy: a consumer that stops
+// early never sees a malformed box further on. On error it yields the error
+// once and stops. A box with a 64-bit size of 0 is yielded once, then the
+// D6 error - where Python would yield it forever.
+func IterBoxes(data []byte, start, end int) iter.Seq2[BoxHeader, error] {
+	return func(yield func(BoxHeader, error) bool) {
+		pos := start
+		for pos < end {
+			hdr, ok, err := ReadBoxHeader(data, pos)
+			if err != nil {
+				yield(BoxHeader{}, err)
+				return
+			}
+			if !ok {
+				return
+			}
+			if !yield(hdr, nil) {
+				return
+			}
+			if hdr.ContentEnd <= pos {
+				yield(BoxHeader{}, errZeroSizeBox(hdr))
+				return
+			}
+			pos = hdr.ContentEnd
+		}
+	}
+}
+
+// listBoxes mirrors list(iter_boxes(data, start, end)).
+func listBoxes(data []byte, start, end int) ([]BoxHeader, error) {
+	var out []BoxHeader
+	for hdr, err := range IterBoxes(data, start, end) {
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, hdr)
+	}
+	return out, nil
+}
+
+// FindChild returns the first immediate child box of the given type
+// (← find_child). ok is false if there is none.
+func FindChild(data []byte, start, end int, boxtype string) (hdr BoxHeader, ok bool, err error) {
+	for h, err := range IterBoxes(data, start, end) {
+		if err != nil {
+			return BoxHeader{}, false, err
+		}
+		if h.Is(boxtype) {
+			return h, true, nil
+		}
+	}
+	return BoxHeader{}, false, nil
+}
+
+// FindUniqueChild is like FindChild, but REFUSES rather than silently picking
+// the first match if more than one is present (← find_unique_child). Some box
+// types the standard allows to repeat in places we don't expect - notably,
+// ISO/IEC 14496-12 allows an 'iprp' to contain more than one 'ipma' (real
+// encoders essentially never do this, but real DECODERS are written to handle
+// it, per e.g. the Nokia HEIF reference implementation's reader). Rebuilding
+// 'iprp' from just the first match found would silently DISCARD any
+// associations recorded in a second 'ipma' - real data loss, not just a
+// missed offset patch - so we refuse loudly instead.
+func FindUniqueChild(data []byte, start, end int, boxtype, context string) (hdr BoxHeader, ok bool, err error) {
+	var matches []BoxHeader
+	for h, err := range IterBoxes(data, start, end) {
+		if err != nil {
+			return BoxHeader{}, false, err
+		}
+		if h.Is(boxtype) {
+			matches = append(matches, h)
+		}
+	}
+	if len(matches) > 1 {
+		return BoxHeader{}, false, boxParseErrorf(
+			"found %d '%s' boxes in %s, expected at most 1 - the standard permits more "+
+				"than one in some cases, but this script does not support "+
+				"rebuilding such a file without risking silently dropping "+
+				"data from the boxes beyond the first", len(matches), boxtype, context)
+	}
+	if len(matches) == 0 {
+		return BoxHeader{}, false, nil
+	}
+	return matches[0], true, nil
+}
+
+// @@SECTIONS@@
+
+// ---------------------------------------------------------------------------
+// Exit code and -V text
+// ---------------------------------------------------------------------------
 
 // ErrorExitCode is the CLI exit code for a genuine error - kept out of 0-4
 // so it never collides with info's rotation-state exit codes
