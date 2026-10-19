@@ -103,7 +103,35 @@ def _op_repr(kw):
     return {'json': text}
 
 
+def _op_cli(kw):
+    # Runs upstream's CLI entry point in-process, as `prog argv...` from
+    # cwd: stdout/stderr captured, exit code from SystemExit. An uncaught
+    # exception is what a real process would print as a traceback, exit 1.
+    import os
+    import traceback
+    from heic_rotate import cli
+    saved_argv, saved_cwd = sys.argv, os.getcwd()
+    out, err = io.StringIO(), io.StringIO()
+    code = 0
+    sys.argv = [kw.get('prog', 'heic-rotate')] + list(kw['argv'])
+    os.chdir(kw['cwd'])
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                cli.main()
+            except SystemExit as e:
+                code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+            except Exception:
+                traceback.print_exc()
+                code = 1
+    finally:
+        sys.argv = saved_argv
+        os.chdir(saved_cwd)
+    return {'json': {'code': code, 'stdout': out.getvalue(), 'stderr': err.getvalue()}}
+
+
 OPS = {
+    'cli': _op_cli,
     'synth': _op_synth,
     'apply_rotation': _op_apply_rotation,
     'reverse_rotation': _op_reverse_rotation,
