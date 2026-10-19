@@ -261,6 +261,22 @@ differences that make a helper mandatory:
   Both points go in COMPAT.md.
 
 ### argparse-compatible CLI parser
+- **Target:** Python 3.14's argparse (COMPAT PYARGS). Behavior captured from the
+  real parser lives in `cli/testdata/argparse_py314.json` (184 argv cases).
+- **Processing order** decides the exit code when an argv has several problems,
+  so it's reproduced too. `cli/args.go` mirrors `_parse_optional`,
+  `_get_option_tuples`, and `consume_optional`:
+  - arguments are processed left to right
+  - a positional is converted when it's consumed (`rotate 45 x -h` exits 2)
+  - `-h`/`-V`/`-G` act as soon as they're reached
+  - unknown options are deferred (`--bogus -h` exits 0)
+  - an unknown character ends a combined short-flag group, leaving the earlier
+    flags in effect and deferring the rest (`-qz -h` exits 0, `-hz` shows help)
+  - an explicit argument after `=` or starting with `-` is an immediate error
+    (`-q=1`, `-f-q`, `--quiet=1`)
+  - only the first `--` is consumed; later ones are values
+  - negative-number-like arguments, arguments containing spaces, `-`, and `''`
+    are positionals
 - **Choice:** A small declarative parser in `cli/args.go` that reproduces:
   - top-level `-q/--quiet`, `--dry-run`, `-f/--force` accepted before **or**
     after the subcommand (Python's `default=SUPPRESS` layering)
@@ -270,17 +286,21 @@ differences that make a helper mandatory:
     since argparse's `allow_abbrev` defaults to True
   - per-subcommand flag sets: `info` rejects `-f`/`--dry-run` *after* the
     subcommand but accepts them before it, exactly as Python does
-  - `rotation` validated like `type=int, choices=[0,90,180,270]` (Python
-    `int()` accepts `090`, `+90`, and surrounding whitespace)
+  - `rotation` validated like `type=int, choices=[0,90,180,270]`, with
+    `parsePyInt` mirroring `int()` (Unicode White_Space trimmed, an optional
+    sign, `_` only between digits, any Unicode `Nd` digit)
   - `insertImplicitRotate` ported verbatim
   - no args → help on stdout, exit 2. `-h` → exit 0. Usage errors → stderr,
     exit 2. `-V` → `VersionString()` on stdout, exit 0. `-G`/`--goversion`
     → `GoVersionString()` on stdout, exit 0 (Go-only, top-level only, like `-V`).
     It joins the long-option abbreviation set, so `--gov` works and `--go` is
     unambiguous because no other long option starts with `go`.
-- **Trade-offs:** About 200 lines of custom code, covered by the ported CLI tests
-  plus a table test of argv edge cases differentially checked against
-  argparse.
+- **Help text** (C6, may differ) uses argparse's layout. The top-level description is
+  upstream's module docstring, generated into `cli/docstring.go` by
+  `tools/gen_docstring.py`.
+- **Trade-offs:** About 450 lines of custom code. It's covered by the captured table, the
+  ported CLI tests, and the CLI difftest (2,000 generated argv sequences against the
+  real parser).
 
 ### Default output naming fix (D1)
 - **Choice:** `stem = strings.TrimSuffix(path, filepath.Ext(base))`, where an
@@ -296,7 +316,7 @@ differences that make a helper mandatory:
 | **Ported unit and integration tests** | Every upstream `TestXxx` class becomes a Go test (see PLAN.md for the mapping) | `go test ./...` always |
 | **`internal/synth`** | Port of `synth_heic.py`. A difftest asserts it emits bytes identical to the Python generator for every parameter combination. | always + difftest |
 | **Engine cross-check** | `ApplyRotation` vs the streaming engine, and `ReverseRotation` vs `VerifyReversible` vs the streaming engine, over the whole corpus | always |
-| **Differential** (`-tags difftest`) | Runs `python3 -m heic_rotate` (PYTHONPATH = `$HEIC_ROTATE_PY_SRC`) and Go `cli.Main` on the same argv and fixtures, and compares output bytes, stdout, stderr, and exit codes. Also runs cross-reversal (Go rotate → Py reverse, Py rotate → Go reverse) and parser argv tables. COMPAT.md cases are excluded via an allow-list. | `make difftest`, CI job with Python 3.12 + upstream checkout at the pinned commit |
+| **Differential** (`-tags difftest`) | Runs `python3 -m heic_rotate` (PYTHONPATH = `$HEIC_ROTATE_PY_SRC`) and Go `cli.Main` on the same argv and fixtures, and compares output bytes, stdout, stderr, and exit codes. Also runs cross-reversal (Go rotate → Py reverse, Py rotate → Go reverse) and parser argv tables. COMPAT.md cases are excluded via an allow-list. | `make difftest`, CI job with Python 3.14 + upstream checkout at the pinned commit. The CLI is driven in-process through pydriver's `cli` op, plus a few real `python -m heic_rotate` processes. |
 | **Real files** | `testdata/*.heic` round-trip, plus rotated copies to `rotated/` for visual checks | when testdata is present |
 
 Python-specific upstream tests get Go equivalents:

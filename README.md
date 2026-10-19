@@ -8,21 +8,37 @@ CLI (same commands, flags, messages, and exit codes, and byte-identical output
 files) and as an **importable Go library** whose functions mirror the
 Python source one to one. It has no dependencies outside the Go standard library.
 
-> **Status: pre-release.** The project scaffolding and test foundation are in
-> place. The rotation core, CLI, and binaries aren't implemented yet; see
-> [docs/PLAN.md](docs/PLAN.md) for progress. Until they land, use the
-> [Python tool](https://github.com/olegoz/heic-lossless-rotate).
+> **Status: pre-release.** The library core and the CLI are complete and
+> verified against the Python tool (see [docs/PLAN.md](docs/PLAN.md)). Still to
+> come: the convenience file API, the low-memory streaming engine, and release
+> binaries.
+
+## Usage
+
+```bash
+make build                                   # ./bin/heic-rotate and ./bin/heic-lossless-rotate
+./bin/heic-rotate rotate 90 photo.heic       # -> photo_rotated.heic
+./bin/heic-rotate info photo_rotated.heic    # exit code 1 = this tool added 90 deg
+./bin/heic-rotate reverse photo_rotated.heic # -> photo_rotated_restored.heic, byte-identical to photo.heic
+./bin/heic-rotate -h
+```
+
+Commands, flags, messages, and exit codes are the Python tool's (see its
+[README](https://github.com/olegoz/heic-lossless-rotate#usage)). The only
+addition is `-G`/`--goversion`, which shows the Go port's own version.
 
 Implements upstream **v1.7.1** (see [docs/UPSTREAM.md](docs/UPSTREAM.md)).
 
 ## Development
 
-Requires Go 1.23+. The differential suite also needs Python 3.11+ and git.
+Requires Go 1.23+. The differential suite also needs Python 3.14 and git (the
+core tests run on 3.11+, but the CLI tests follow 3.14's argparse).
 
 ```bash
 make test       # unit tests (no Python needed)
 make lint       # go vet (+ staticcheck if installed)
-make build      # compile; binaries land in ./bin/ once cmd/ exists
+make build      # compile; binaries land in ./bin/
+make run ARGS="info photo.heic"
 make difftest   # fetch the pinned upstream into .upstream/ and compare Go vs Python
 ```
 
