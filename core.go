@@ -16,6 +16,7 @@
 package heicrotate
 
 import (
+	"encoding/binary"
 	"fmt"
 	"iter"
 	"strconv"
@@ -241,6 +242,157 @@ func FindUniqueChild(data []byte, start, end int, boxtype, context string) (hdr 
 		return BoxHeader{}, false, nil
 	}
 	return matches[0], true, nil
+}
+
+// ---------------------------------------------------------------------------
+// pitm - Primary Item box
+// ---------------------------------------------------------------------------
+
+// ParsePitm returns the primary item id (← parse_pitm).
+func ParsePitm(data []byte, cStart, cEnd int) (uint32, error) {
+	version, err := pyIndex(data, cStart)
+	if err != nil {
+		return 0, err
+	}
+	if version == 0 {
+		id, err := unpackU16(data, cStart+4)
+		return uint32(id), err
+	}
+	return unpackU32(data, cStart+4)
+}
+
+// ---------------------------------------------------------------------------
+// ipma - Item Property Association box
+// ---------------------------------------------------------------------------
+
+// IpmaAssoc is one (prop_index, essential) association.
+type IpmaAssoc struct {
+	PropIndex int // 1-based index into ipco's children
+	Essential bool
+}
+
+// IpmaEntry is one [item_id, [(prop_index, essential), ...]] entry.
+type IpmaEntry struct {
+	ItemID uint32
+	Assocs []IpmaAssoc
+}
+
+// ParseIpma returns ipma's version, flags, and entries in file order
+// (← parse_ipma).
+func ParseIpma(data []byte, cStart, cEnd int) (version uint8, flags uint32, entries []IpmaEntry, err error) {
+	if version, err = pyIndex(data, cStart); err != nil {
+		return
+	}
+	f, _ := intFromBytes(data, cStart+1, 3) // 3 bytes never exceed 64 bits
+	flags = uint32(f)
+	pos := cStart + 4
+	entryCount, err := unpackU32(data, pos)
+	if err != nil {
+		return
+	}
+	pos += 4
+	// entryCount comes from the file: grow entries as bytes are actually
+	// consumed rather than preallocating from it.
+	for range entryCount {
+		var itemID uint32
+		if version < 1 {
+			var id16 uint16
+			if id16, err = unpackU16(data, pos); err != nil {
+				return
+			}
+			itemID = uint32(id16)
+			pos += 2
+		} else {
+			if itemID, err = unpackU32(data, pos); err != nil {
+				return
+			}
+			pos += 4
+		}
+		var assocCount byte
+		if assocCount, err = pyIndex(data, pos); err != nil {
+			return
+		}
+		pos++
+		var assocs []IpmaAssoc
+		for range assocCount {
+			if flags&1 != 0 {
+				var v uint16
+				if v, err = unpackU16(data, pos); err != nil {
+					return
+				}
+				pos += 2
+				assocs = append(assocs, IpmaAssoc{PropIndex: int(v & 0x7fff), Essential: v&0x8000 != 0})
+			} else {
+				var v byte
+				if v, err = pyIndex(data, pos); err != nil {
+					return
+				}
+				pos++
+				assocs = append(assocs, IpmaAssoc{PropIndex: int(v & 0x7f), Essential: v&0x80 != 0})
+			}
+		}
+		entries = append(entries, IpmaEntry{ItemID: itemID, Assocs: assocs})
+	}
+	if pos != cEnd {
+		return 0, 0, nil, boxParseErrorf("ipma parse mismatch: consumed %d, expected %d", pos-cStart, cEnd-cStart)
+	}
+	return version, flags, entries, nil
+}
+
+// BuildIpma serializes a full ipma box, including its 8-byte header, from
+// structured data (← build_ipma).
+func BuildIpma(version uint8, flags uint32, entries []IpmaEntry) ([]byte, error) {
+	body := []byte{version, byte(flags >> 16), byte(flags >> 8), byte(flags)}
+	body = binary.BigEndian.AppendUint32(body, uint32(len(entries)))
+	wideIndex := flags&1 != 0
+	for _, e := range entries {
+		if version < 1 {
+			body = binary.BigEndian.AppendUint16(body, uint16(e.ItemID))
+		} else {
+			body = binary.BigEndian.AppendUint32(body, e.ItemID)
+		}
+		if len(e.Assocs) > 255 { // Python: bytes([len(assocs)]) raises ValueError (COMPAT D2)
+			return nil, boxParseErrorf("ipma entry for item %d would have %d associations, more than the 255 an entry can hold",
+				e.ItemID, len(e.Assocs))
+		}
+		body = append(body, byte(len(e.Assocs)))
+		for _, a := range e.Assocs {
+			if wideIndex {
+				if a.PropIndex > 0x7fff {
+					return nil, boxParseErrorf("property index too large for 15-bit ipma field")
+				}
+				v := uint16(a.PropIndex)
+				if a.Essential {
+					v |= 0x8000
+				}
+				body = binary.BigEndian.AppendUint16(body, v)
+			} else {
+				if a.PropIndex > 0x7f {
+					return nil, boxParseErrorf("property index too large for 7-bit ipma field " +
+						"(file would need 16-bit ipma flag - not auto-upgraded)")
+				}
+				v := byte(a.PropIndex)
+				if a.Essential {
+					v |= 0x80
+				}
+				body = append(body, v)
+			}
+		}
+	}
+	return makeBox("ipma", body), nil
+}
+
+// makeBox mirrors struct.pack('>I4s', len(content) + 8, boxtype) + content.
+func makeBox(boxtype string, content []byte) []byte {
+	out := make([]byte, 0, 8+len(content))
+	out = binary.BigEndian.AppendUint32(out, uint32(len(content)+8))
+	out = append(out, boxtype...)
+	return append(out, content...)
+}
+
+// ParseIpcoChildren returns ipco's child property boxes (← parse_ipco_children).
+func ParseIpcoChildren(data []byte, cStart, cEnd int) ([]BoxHeader, error) {
+	return listBoxes(data, cStart, cEnd)
 }
 
 // @@SECTIONS@@
