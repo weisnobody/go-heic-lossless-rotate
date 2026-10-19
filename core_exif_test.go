@@ -8,19 +8,6 @@ import (
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
 )
 
-func mustSynth(t testing.TB, mutate func(*synth.Options)) []byte {
-	t.Helper()
-	o := synth.DefaultOptions()
-	if mutate != nil {
-		mutate(&o)
-	}
-	data, err := synth.BuildSyntheticHEIC(o)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
-}
-
 // metaBounds returns (meta_body_start, meta content end) without
 // LocateStructures, so these tests don't depend on later sections.
 func metaBounds(t *testing.T, data []byte) (int, int) {

@@ -12,15 +12,6 @@ import (
 func intp(v int) *int       { return &v }
 func u32p(v uint32) *uint32 { return &v }
 
-func mustApply(t testing.TB, data []byte, turns int) []byte {
-	t.Helper()
-	out, err := ApplyRotation(data, turns, RotateOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return out
-}
-
 func TestGatherAndFormatInfo(t *testing.T) {
 	fresh := mustSynth(t, func(o *synth.Options) { o.IncludeIrot, o.IrotValue = true, 3 })
 	r2src := mustSynth(t, func(o *synth.Options) { o.IncludeExif, o.Layout = true, synth.MetaFirst })
