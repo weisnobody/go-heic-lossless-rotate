@@ -1,7 +1,10 @@
 # Plan: Phase 4 - File API with Atomic Writes
 
 - **Date:** 2026-10-19
-- **Status:** Approved
+- **Status:** Implemented 2026-10-19. The CLI gate (now 2,566 cases, comparing modes and symlinks too) and
+  the core gate are green. Mutation checks confirmed that the mode, symlink, and hard-link tests (unit and
+  difftest) each fail when their behavior is removed. No deviations from this plan, apart from adding
+  runnable `Example` tests that back the README's library example.
 - **Covers:** [PLAN.md](../PLAN.md) Phase 4 (File API)
 - **Upstream pin:** heic-lossless-rotate v1.7.1, commit `70d6c73`
 - **Branch:** `feat/phase-4-file-api` (from `dev`)

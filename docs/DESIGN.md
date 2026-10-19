@@ -249,16 +249,33 @@ differences that make a helper mandatory:
   page cache absorbs it. The two engines could drift apart; `stream_test.go`
   asserts byte equality between them across the entire test corpus.
 
+### File API (`file.go`)
+- **Choice:** `RotateFile`/`ReverseFile` are the rotate and reverse halves of `cli.py`'s `_run`. They
+  read the input, then run the core, `VerifyStructure`, and (for rotate) the post-rotate self-check through
+  `verifyReversibleHook`. After that they apply default naming (D1) and the overwrite refusal
+  (`*OutputExistsError`, `errors.Is(err, fs.ErrExist)`), then dry-run or write. Every `[ok]`/`[dry-run]`
+  line goes through `FileOptions.Log`. `cli.run` only maps flags onto them. `InfoFile` reads the file and calls `GatherInfo`.
+- **Reasoning:** library callers get the CLI's safety checks, and the write path has a single
+  implementation, which the CLI difftest covers.
+
 ### Atomic writes (D3)
-- **Choice:** `file.go` writes `os.CreateTemp(dir(out), ".heic-rotate-*")`,
-  fsyncs, then `os.Rename`s it over the target. When overwriting with `-f`, it copies the
-  existing target's mode first. New files get `0o666 &^ umask`, as Python's `open('wb')` does.
-- **Reasoning:** No truncated outputs on crash, and in-place editing
-  (`input == output`) stays correct with the streaming engine (pinned by the
-  ported `TestSameFileInputOutput`).
-- **Trade-offs:** It breaks hard links and replaces the inode (xattrs and ACLs aren't
-  copied). The exists-check→rename window is still a small race, as it is in Python.
-  Both points go in COMPAT.md.
+- **Choice:** `writeOutput` writes a temp file in the output's directory, fsyncs it, and renames it over the
+  target. The Python probe (see the Phase 4 plan) showed seven ways a naive version would visibly
+  differ from Python's in-place `open('wb')`. Each is handled:
+  1. Symlinks are resolved first (`Lstat`/`Readlink`, 40 hops, then `ELOOP`), so writes go through a link.
+     A dangling link's target gets created.
+  2. An existing directory gets `EISDIR`, and an unwritable file gets the error from an `O_WRONLY`
+     open (no truncation). Both match Python's message.
+  3. A hard-linked target (`Nlink > 1`) is written in place with Python's exact semantics.
+  4. The temp file is created with `OpenFile(…, O_EXCL, 0o666)` (`os.CreateTemp` would force 0600), so
+     the umask applies as it does for Python's new files. On overwrite, the old mode is restored and the
+     owner is restored best effort.
+  5. Every error is re-labelled as an `open` error on the output path, so messages name it as
+     Python's do.
+- **Reasoning:** a crash or full disk can't truncate the output, and an in-place edit can't destroy the
+  original.
+- **Trade-offs:** see COMPAT D3. A non-hard-linked overwrite loses xattrs/ACLs, the owner is restored only
+  when permitted, and the exists-check-to-rename window is the same small race as in Python.
 
 ### argparse-compatible CLI parser
 - **Target:** Python 3.14's argparse (COMPAT PYARGS). Behavior captured from the
