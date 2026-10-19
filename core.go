@@ -18,10 +18,13 @@ package heicrotate
 import (
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"iter"
+	"maps"
 	"math"
 	"math/big"
 	"math/bits"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -907,6 +910,314 @@ func FindExifOrientationField(data []byte, metaBodyStart, metaCEnd int) (field E
 		pos += 12
 	}
 	return field, false, nil
+}
+
+// ---------------------------------------------------------------------------
+// Provenance ('uuid') box: read/build/update, and CRC32 helpers
+// ---------------------------------------------------------------------------
+
+// Crc32ExcludingRange is the CRC32 of data with the byte range
+// [exclStart, exclEnd) removed - used so a provenance box's own CRC field
+// isn't hashing itself (← crc32_excluding_range). Computed incrementally
+// over the two halves; nothing is copied.
+func Crc32ExcludingRange(data []byte, exclStart, exclEnd int) uint32 {
+	crc := crc32.ChecksumIEEE(pySlice(data, 0, exclStart))
+	return crc32.Update(crc, crc32.IEEETable, pySlice(data, exclEnd, len(data)))
+}
+
+// FindProvenanceBox returns the first top-level 'uuid' box carrying
+// ProvenanceUUID (← find_provenance_box).
+func FindProvenanceBox(data []byte) (hdr BoxHeader, ok bool, err error) {
+	for h, err := range IterBoxes(data, 0, len(data)) {
+		if err != nil {
+			return BoxHeader{}, false, err
+		}
+		if h.Is("uuid") && h.ContentEnd-h.ContentStart >= 16 &&
+			string(data[h.ContentStart:h.ContentStart+16]) == string(ProvenanceUUID[:]) {
+			return h, true, nil
+		}
+	}
+	return BoxHeader{}, false, nil
+}
+
+// ProvenanceEntries maps a provenance record's 4-byte entry tags (OIRT,
+// OIPF, OMSZ, OILC, OEXO, PCRC, CCRC, TVER, and v1's OPRP) to their values.
+type ProvenanceEntries map[string][]byte
+
+// parseProvenanceEntries is the TLV walk shared by ParseProvenance and
+// ParseProvenanceLenient. It returns the position it stopped at.
+func parseProvenanceEntries(data []byte, hdr BoxHeader, strictVersion bool) (uint8, ProvenanceEntries, int, error) {
+	pos := hdr.ContentStart + 16 // skip the 16-byte uuid
+	version, err := pyIndex(data, pos)
+	if err != nil {
+		return 0, nil, 0, err
+	}
+	pos++
+	if strictVersion && version > FormatVersion {
+		return 0, nil, 0, provenanceErrorf("provenance box format version %d is newer than this "+
+			"script understands (max %d) - update heic-lossless-rotate", version, FormatVersion)
+	}
+	entryCount, err := pyIndex(data, pos)
+	if err != nil {
+		return 0, nil, 0, err
+	}
+	pos++
+	entries := ProvenanceEntries{}
+	for range entryCount {
+		tag := string(pySlice(data, pos, pos+4))
+		pos += 4
+		length, err := unpackU32(data, pos)
+		if err != nil {
+			return 0, nil, 0, err
+		}
+		pos += 4
+		entries[tag] = pySliceCopy(data, pos, pos+int(length)) // later duplicates win, as in a dict
+		pos += int(length)
+	}
+	return version, entries, pos, nil
+}
+
+// ParseProvenance parses the provenance box content into (version, entries)
+// (← parse_provenance).
+func ParseProvenance(data []byte, hdr BoxHeader) (uint8, ProvenanceEntries, error) {
+	version, entries, pos, err := parseProvenanceEntries(data, hdr, true)
+	if err != nil {
+		return 0, nil, err
+	}
+	if pos != hdr.ContentEnd {
+		return 0, nil, provenanceErrorf("provenance box parse mismatch: consumed %d, "+
+			"expected %d (corrupt or truncated?)", pos-hdr.ContentStart, hdr.ContentEnd-hdr.ContentStart)
+	}
+	return version, entries, nil
+}
+
+// BuildProvenanceBox serializes a full 'uuid' provenance box, including its
+// 8-byte header, with entries in sorted tag order for reproducibility
+// (← build_provenance_box). Python asserts every tag is 4 bytes and that
+// there are at most 255 entries; here those are errors.
+func BuildProvenanceBox(version uint8, entries ProvenanceEntries) ([]byte, error) {
+	if len(entries) > 255 {
+		return nil, provenanceErrorf("provenance record has %d entries, more than 255", len(entries))
+	}
+	tags := slices.Sorted(maps.Keys(entries))
+	body := append(append(make([]byte, 0, 64), ProvenanceUUID[:]...), version, byte(len(entries)))
+	for _, tag := range tags {
+		if len(tag) != 4 {
+			return nil, provenanceErrorf("provenance entry tag %s is not 4 bytes", pyfmt.BytesRepr([]byte(tag)))
+		}
+		body = append(body, tag...)
+		body = binary.BigEndian.AppendUint32(body, uint32(len(entries[tag])))
+		body = append(body, entries[tag]...)
+	}
+	return makeBox("uuid", body), nil
+}
+
+// Structures is locate_structures' dict: the handful of top-level/meta-level
+// structures rotate/reverse/info care about. IlocHdr and ProvenanceHdr are
+// nil when absent.
+type Structures struct {
+	Top           []BoxHeader
+	MetaHdr       BoxHeader
+	MetaBodyStart int
+	PitmHdr       BoxHeader
+	PrimaryItemID uint32
+	IprpHdr       BoxHeader
+	IlocHdr       *BoxHeader
+	ProvenanceHdr *BoxHeader
+}
+
+// LocateStructures finds meta, pitm (and the primary item id), iprp, iloc,
+// and the provenance box (← locate_structures). Shared by rotate, reverse,
+// and info so parsing logic lives in exactly one place.
+func LocateStructures(data []byte) (*Structures, error) {
+	top, err := listBoxes(data, 0, len(data))
+	if err != nil {
+		return nil, err
+	}
+	s := &Structures{Top: top}
+	found := false
+	for _, h := range top {
+		if h.Is("meta") {
+			s.MetaHdr, found = h, true
+			break
+		}
+	}
+	if !found {
+		return nil, boxParseErrorf("no top-level 'meta' box found - not a valid HEIF file?")
+	}
+	s.MetaBodyStart = s.MetaHdr.ContentStart + 4
+	metaEnd := s.MetaHdr.ContentEnd
+
+	pitm, ok, err := FindChild(data, s.MetaBodyStart, metaEnd, "pitm")
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, boxParseErrorf("no 'pitm' (primary item) box found inside 'meta'")
+	}
+	s.PitmHdr = pitm
+	if s.PrimaryItemID, err = ParsePitm(data, pitm.ContentStart, pitm.ContentEnd); err != nil {
+		return nil, err
+	}
+
+	iprp, ok, err := FindUniqueChild(data, s.MetaBodyStart, metaEnd, "iprp", "'meta'")
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, boxParseErrorf("no 'iprp' box found inside 'meta'")
+	}
+	s.IprpHdr = iprp
+
+	iloc, ok, err := FindChild(data, s.MetaBodyStart, metaEnd, "iloc")
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		s.IlocHdr = &iloc
+	}
+	prov, ok, err := FindProvenanceBox(data)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		s.ProvenanceHdr = &prov
+	}
+	return s, nil
+}
+
+// iprpParts finds iprp's ipco and ipma (each refused if duplicated) and
+// returns ipco's children and ipma's parse; ok is false if either box is
+// missing.
+func iprpParts(data []byte, iprpCStart, iprpCEnd int) (ipcoHdr, ipmaHdr BoxHeader, ok bool, err error) {
+	ipcoHdr, ipcoOK, err := FindUniqueChild(data, iprpCStart, iprpCEnd, "ipco", "'iprp'")
+	if err != nil {
+		return
+	}
+	ipmaHdr, ipmaOK, err := FindUniqueChild(data, iprpCStart, iprpCEnd, "ipma", "'iprp'")
+	if err != nil {
+		return
+	}
+	return ipcoHdr, ipmaHdr, ipcoOK && ipmaOK, nil
+}
+
+// primaryEntry returns the ipma entry for itemID, if any.
+func primaryEntry(entries []IpmaEntry, itemID uint32) (*IpmaEntry, bool) {
+	for i := range entries {
+		if entries[i].ItemID == itemID {
+			return &entries[i], true
+		}
+	}
+	return nil, false
+}
+
+// findIrotChild returns the first ipco child that is an 'irot' associated
+// with entry, in association order, considering only valid 1-based indexes.
+func findIrotChild(entry *IpmaEntry, children []BoxHeader) (BoxHeader, bool) {
+	for _, a := range entry.Assocs {
+		if a.PropIndex >= 1 && a.PropIndex <= len(children) {
+			if child := children[a.PropIndex-1]; child.Is("irot") {
+				return child, true
+			}
+		}
+	}
+	return BoxHeader{}, false
+}
+
+// rotationFromIprpRange returns the primary item's associated 'irot' value
+// (0-3), or 0 if it has none, given the byte range of an 'iprp' box's
+// CONTENT (← _rotation_from_iprp_range). Works whether data is a whole file
+// or a standalone snapshot buffer.
+func rotationFromIprpRange(data []byte, iprpCStart, iprpCEnd int, primaryItemID uint32) (int, error) {
+	ipcoHdr, ipmaHdr, ok, err := iprpParts(data, iprpCStart, iprpCEnd)
+	if err != nil || !ok {
+		return 0, err
+	}
+	children, err := ParseIpcoChildren(data, ipcoHdr.ContentStart, ipcoHdr.ContentEnd)
+	if err != nil {
+		return 0, err
+	}
+	_, _, entries, err := ParseIpma(data, ipmaHdr.ContentStart, ipmaHdr.ContentEnd)
+	if err != nil {
+		return 0, err
+	}
+	entry, ok := primaryEntry(entries, primaryItemID)
+	if !ok {
+		return 0, nil
+	}
+	if child, ok := findIrotChild(entry, children); ok {
+		b, err := pyIndex(data, child.ContentStart)
+		return int(b & 0x3), err
+	}
+	return 0, nil
+}
+
+// extractIrotState reports the primary item's pristine 'irot' state, given
+// an 'iprp' content range (← _extract_irot_state):
+//   - hadIrot=true: the primary item already has an associated 'irot';
+//     irotByte is that property's raw content byte (unmasked - preserved
+//     exactly, not just the 2-bit angle).
+//   - hadIrot=false: no such property; ipmaFlags is the (pre-insertion)
+//     ipma's flags, needed to restore ipma on reverse if inserting 'irot'
+//     later set the 15-bit-index ("wide") flag bit.
+//
+// Used on a file's first-ever edit and by the v1->v2 provenance-format
+// migration (against an old record's full OPRP snapshot).
+func extractIrotState(data []byte, iprpCStart, iprpCEnd int, primaryItemID uint32) (hadIrot bool, irotByte byte, ipmaFlags uint32, err error) {
+	ipcoHdr, ipmaHdr, ok, err := iprpParts(data, iprpCStart, iprpCEnd)
+	if err != nil {
+		return
+	}
+	if !ok {
+		return false, 0, 0, boxParseErrorf("'iprp' is missing 'ipco' or 'ipma'")
+	}
+	children, err := ParseIpcoChildren(data, ipcoHdr.ContentStart, ipcoHdr.ContentEnd)
+	if err != nil {
+		return
+	}
+	_, flags, entries, err := ParseIpma(data, ipmaHdr.ContentStart, ipmaHdr.ContentEnd)
+	if err != nil {
+		return
+	}
+	if entry, ok := primaryEntry(entries, primaryItemID); ok {
+		if child, ok := findIrotChild(entry, children); ok {
+			b, err := pyIndex(data, child.ContentStart)
+			return true, b, 0, err
+		}
+	}
+	return false, 0, flags, nil
+}
+
+// GetCurrentRotation reads the CURRENTLY-applied rotation (0-3 quarter
+// turns) from the primary item's live 'irot' property, or 0 if it has none
+// (← get_current_rotation). This includes any rotation the file already had
+// before heic-lossless-rotate ever touched it.
+func GetCurrentRotation(data []byte) (int, error) {
+	s, err := LocateStructures(data)
+	if err != nil {
+		return 0, err
+	}
+	return rotationFromIprpRange(data, s.IprpHdr.ContentStart, s.IprpHdr.ContentEnd, s.PrimaryItemID)
+}
+
+// GetRotationFromIprpSnapshot does the same lookup against a standalone
+// saved 'iprp' box (8-byte header + content), as stored in a v1 provenance
+// record's OPRP entry (← get_rotation_from_iprp_snapshot).
+func GetRotationFromIprpSnapshot(iprpBox []byte, primaryItemID uint32) (int, error) {
+	return rotationFromIprpRange(iprpBox, 8, len(iprpBox), primaryItemID)
+}
+
+// ParseProvenanceLenient is like ParseProvenance, but tolerates a record
+// whose version is newer than this port knows about, returning whatever
+// entries it can structurally read plus whether the record was well-formed
+// (← parse_provenance_lenient). Used by GatherInfo, which only reports
+// what it finds.
+func ParseProvenanceLenient(data []byte, hdr BoxHeader) (version uint8, entries ProvenanceEntries, wellFormed bool, err error) {
+	version, entries, pos, err := parseProvenanceEntries(data, hdr, false)
+	if err != nil {
+		return 0, nil, false, err
+	}
+	return version, entries, pos == hdr.ContentEnd, nil
 }
 
 // @@SECTIONS@@
