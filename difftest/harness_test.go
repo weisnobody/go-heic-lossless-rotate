@@ -34,7 +34,7 @@ func TestDriverRejectsUnknownOp(t *testing.T) {
 	ft := &fatalRecorder{TB: t}
 	func() {
 		defer func() { _ = recover() }() // fatalRecorder panics to stop like t.Fatal
-		py.Drive(ft, []Request{{ID: "x", Op: "no_such_op"}})
+		py.Drive(ft, nil, []Request{{ID: "x", Op: "no_such_op"}})
 	}()
 	if !ft.failed || !strings.Contains(ft.msg, "unknown op(s): no_such_op") {
 		t.Errorf("Drive with unknown op: failed=%v msg=%q", ft.failed, ft.msg)

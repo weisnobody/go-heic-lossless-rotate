@@ -24,7 +24,7 @@ deliberate divergences (D1–D5).
                 │                               │ shares        │
                 │  core.go    (← core.py, 1:1)  ◄┘ parsers,     │
                 │     []byte in → []byte out      builders, TLV │
-                │  pyfmt.go   Python-compatible formatting      │
+                │  pybytes.go Python slice/index semantics      │
                 │  version.go (← _version.py)                   │
                 └───────────────────────────────────────────────┘
 ```
@@ -59,7 +59,8 @@ go.mod                          module github.com/pjg/go-heic-lossless-rotate
 doc.go                          ← heic_rotate/__init__.py + module docstrings
 version.go                      ← _version.py   Version = "1.7.1", GoRevision, GoVersion
 core.go                         ← core.py       (1:1 port)
-pyfmt.go                        Python repr/format helpers (unexported)
+pybytes.go                      Python slice/index/struct semantics (unexported)
+internal/pyfmt/                 Python repr/format helpers (shared with synth and the CLI)
 stream.go                       streaming engine (Go-only)
 file.go                         file-level API (Go-only)
 cli/cli.go                      ← cli.py        Main, buildParser, insertImplicitRotate, run
@@ -148,19 +149,37 @@ offsets uses `int64`/`uint64` with explicit overflow and underflow checks that
 return `BoxParseError` (D4, D5). Every slice access is bounds-checked
 up front so that truncated input produces an error instead of a panic (D2).
 
-## Python-compatible formatting (`pyfmt.go`)
+### Python byte-access semantics (`pybytes.go`)
+
+`core.py` relies on three different behaviors when an access runs past the
+end of the data. They decide what "byte-identical on every input Python
+accepts" means in practice:
+
+| Python | Past the end of `data` | Go helper |
+|---|---|---|
+| `data[a:b]`, `memoryview[a:b]` | clamps; `a > b` gives empty | `pySlice` (aliases), `pySliceCopy`, `pySlice64` |
+| `int.from_bytes(data[p:p+n])` | silently reads a *shorter* value | `intFromBytes` (reports >64-bit values) |
+| `data[i]`, `struct.unpack_from` | `IndexError` / `struct.error` | `pyIndex`, `unpackU16/32/64` return `*BoxParseError` (D2) |
+| `buf[a:b] = new` | replaces the clamped range, the length may change | `splice` (in place when capacity allows) |
+
+Parsers read across box boundaries exactly as Python does (bounds are
+`len(data)`, never the box end). Go-only refusals (D5, D7) are deferred
+until after the point where Python's own parse would succeed, so they never
+replace an error Python reports.
+
+## Python-compatible formatting (`internal/pyfmt`)
 
 C5 requires reproducing Python's string formatting exactly. Verified
 differences that make a helper mandatory:
 
 | Python | Naive Go | Helper |
 |---|---|---|
-| `f"{x:#010x}"` → `0x000000ab` | `%#010x` → `0x00000000ab` ✗ | `pyHex08(uint32)` = `fmt.Sprintf("0x%08x", x)` |
-| `f"{boxtype}"` (bytes) → `b'irot'`, `b"a'b"`, `b'\x00'` | — | `pyBytesRepr([]byte)` (CPython quote selection + `\x`/`\t`/`\n`/`\r`/`\\` escapes) |
-| `list(enumerate(prop_types, 1))` → `[(1, 'ispe'), (2, 'irot')]` with `decode('ascii','replace')` → U+FFFD | — | `pyPropList([]BoxHeader)`, `pyStrRepr(string)` |
-| `primary_entry[1]` → `[(1, True), (2, False)]` | — | `pyAssocList([]IpmaAssoc)` |
+| `f"{x:#010x}"` → `0x000000ab` | `%#010x` → `0x00000000ab` ✗ | `pyfmt.Hex08(uint32)` = `fmt.Sprintf("0x%08x", x)` |
+| `f"{boxtype}"` (bytes) → `b'irot'`, `b"a'b"`, `b'\x00'` | — | `pyfmt.BytesRepr([]byte)` (CPython quote selection + `\x`/`\t`/`\n`/`\r`/`\\` escapes) |
+| `list(enumerate(prop_types, 1))` → `[(1, 'ispe'), (2, 'irot')]` with `decode('ascii','replace')` → U+FFFD | — | `pyfmt.EnumerateList`, `pyfmt.StrRepr`, `pyfmt.DecodeASCIIReplace` |
+| `primary_entry[1]` → `[(1, True), (2, False)]` | — | `pyfmt.IntBoolList` |
 | `f"{n:+d}"` | `%+d` ✓ | — |
-| `OSError` → `[Errno 2] No such file or directory: 'x.heic'` | `open x.heic: no such file or directory` ✗ | `pyOSError(op, path, err)` maps `syscall.Errno` to `[Errno N] <Strerror>: <repr(path)>`. Exact for the common errnos (ENOENT, EACCES, EISDIR, ENOTDIR, EEXIST, ENOSPC, EROFS), best-effort otherwise (listed in COMPAT.md). |
+| `OSError` → `[Errno 2] No such file or directory: 'x.heic'` | `open x.heic: no such file or directory` ✗ | `pyfmt.OSError(op, path, err)` (Phase 3) maps `syscall.Errno` to `[Errno N] <Strerror>: <repr(path)>`. Exact for the common errnos (ENOENT, EACCES, EISDIR, ENOTDIR, EEXIST, ENOSPC, EROFS), best-effort otherwise (listed in COMPAT.md). |
 
 ## Key Decisions
 
@@ -295,7 +314,7 @@ Python-specific upstream tests get Go equivalents:
 
 | Risk | Mitigation |
 |---|---|
-| Subtle formatting drift (reprs, hex widths, OSError text) breaks C5 | The `pyfmt.go` helpers each get unit tests against literal Python output, and the difftest compares full stdout and stderr |
+| Subtle formatting drift (reprs, hex widths, OSError text) breaks C5 | The `internal/pyfmt` helpers have unit tests against literal Python output plus a difftest against the live interpreter, and the difftest compares full log text |
 | Lazy-vs-eager iteration changes which malformed files are accepted | `IterBoxes` stays a lazy `iter.Seq2`. Difftest fixtures include files with garbage after the needed box. |
 | Python crash paths (D2) are hard to enumerate | Bounds-check every read with a shared `need(data, pos, n)` helper. Fuzzing comes post-MVP. The CLI also `recover()`s as a last-resort net (exit 10, "internal error"), and tests assert it's never hit. |
 | The streaming engine diverges from core | The cross-check test is a release gate. The engine reuses core's parsers and builders, so only the I/O plumbing is new. |

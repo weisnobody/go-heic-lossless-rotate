@@ -10,8 +10,9 @@ skips Python-vs-Go comparisons only for cases tagged with one of these
 IDs. An unexplained difference is a bug, either in the port or in this
 page.
 
-> **Status:** skeleton. The Go behaviors below are specified but not yet
-> implemented. Each entry's *Implemented in* field says which phase lands it.
+> **Status:** D2 and D4–D7 are implemented (Phase 2) and checked by the
+> difftest gate. The remaining entries are specified but not yet implemented;
+> each entry's *Implemented in* field says which phase lands it.
 
 ---
 
@@ -37,14 +38,16 @@ page.
 | | |
 |---|---|
 | **ID** | `D2` |
-| **Python** | Truncated or malformed boxes that the parsers don't explicitly check raise uncaught `struct.error`/`IndexError`, which prints a traceback to stderr and exits **1**. |
-| **Go** | Every read is bounds-checked. The library returns `*BoxParseError` or `*ProvenanceError` and never panics on malformed input. The CLI prints `error: <message>` and exits **10** (`ErrorExitCode`). |
-| **Same for** | Every malformed-input case Python already rejects with its own `BoxParseError`/`ProvenanceError`: same message, same exit code 10. |
+| **Python** | Malformed content that the parsers don't explicitly check raises an uncaught `struct.error`, `IndexError`, `KeyError` (a missing provenance entry), or `TypeError`, which prints a traceback to stderr and exits **1**. |
+| **Go** | Every read is bounds-checked and every lookup checked. The library returns `*BoxParseError` (structure) or `*ProvenanceError` (provenance entries) and never panics on malformed input. The CLI prints `error: <message>` and exits **10** (`ErrorExitCode`). |
+| **Same for** | Every case Python rejects with its own `BoxParseError`/`ProvenanceError`: same type, same message, same exit code 10. Truncating a file never crashes Python - a cut-off top-level box is always caught as a typed error - so truncated files behave identically. |
 | **Implemented in** | Phase 2 |
 
-Example: a file whose `iloc` box is cut off mid-entry. Python prints
-`struct.error: unpack_from requires a buffer of at least …` and exits 1.
-Go prints `error: …` and exits 10.
+Example: a provenance record whose `PCRC` entry is 3 bytes long. Python
+prints `struct.error: unpack requires a buffer of 4 bytes` (traceback,
+exit 1); Go returns `ProvenanceError: provenance entry 'PCRC' is 3 bytes,
+expected 4` (exit 10). In the difftest gate's single-byte corruption sweep,
+about 2.3% of cases are D2.
 
 ## D3: Atomic output writes
 
@@ -66,13 +69,33 @@ Go prints `error: …` and exits 10.
 | **Go** | `*BoxParseError` (exit 10). |
 | **Implemented in** | Phase 2 |
 
-## D5: `iloc` field widths over 8 bytes
+## D5: `iloc` values over 64 bits
 
 | | |
 |---|---|
 | **ID** | `D5` |
-| **Python** | `iloc` offset/length/base-offset/index fields are read as arbitrary-precision ints, so any 4-bit width (0–15 bytes) is accepted. |
-| **Go** | Widths other than those ISO/IEC 14496-12 defines (0, 4, 8) are accepted up to 8 bytes. Wider ones are refused with `*BoxParseError`. |
+| **Python** | `iloc` offset/length/base-offset/index fields are arbitrary-precision ints, so any 4-bit width (0–15 bytes) and any value is accepted. |
+| **Go** | Every width 0–15 is accepted too. Only a *value* that doesn't fit in 64 bits is refused (`*BoxParseError`) - whether read from a 9+-byte field or produced by patching one. Such an offset points far beyond any real file. |
+| **Ordering** | The refusal happens only after the point where Python's own parse would succeed. Where Python reports an error first (e.g. `iloc parse mismatch`), Go reports that same error. |
+| **Implemented in** | Phase 2 |
+
+## D6: Zero-size 64-bit box
+
+| | |
+|---|---|
+| **ID** | `D6` |
+| **Python** | A box whose size field is 1 (64-bit size follows) and whose 64-bit size is 0 never advances, so `iter_boxes` and `verify_structure` loop forever. |
+| **Go** | `*BoxParseError`: `box b'free' at N has a 64-bit size of 0 and cannot be stepped over`. A lookup that stops at that very box (as Python's `find_child` would) still returns it. |
+| **Implemented in** | Phase 2 |
+
+## D7: Runaway zero-width `iloc` extents
+
+| | |
+|---|---|
+| **ID** | `D7` |
+| **Python** | With offset, length, and index sizes all 0, extents occupy no bytes, so a file can declare up to 65535 per item across many items; Python materializes every one (gigabytes for a crafted file). |
+| **Go** | Parses up to 2^20 (1,048,576) zero-width extents - matching Python exactly - and refuses beyond that with `*BoxParseError`. Exceeding the cap takes 17+ items of 65535 empty extents each. |
+| **Ordering** | As with D5, only after the point where Python's own parse would succeed. |
 | **Implemented in** | Phase 2 |
 
 ## OSError message text (best effort)
@@ -83,7 +106,7 @@ Go prints `error: …` and exits 10.
 | **Python** | File errors print as `error: [Errno 2] No such file or directory: 'x.heic'`, using the platform's `strerror` text. |
 | **Go** | Formats the same way for ENOENT, EACCES, EISDIR, ENOTDIR, EEXIST, ENOSPC, and EROFS. Other errnos fall back to Go's error text in the same `[Errno N] …: '<path>'` shape. |
 | **Same for** | Exit code (10) in every case. The custom `refusing to overwrite existing file …` message is exact. |
-| **Implemented in** | Phase 2 (`pyfmt.go`), Phase 3 (CLI) |
+| **Implemented in** | Phase 3 (CLI; formatting helpers in `internal/pyfmt`) |
 
 ---
 

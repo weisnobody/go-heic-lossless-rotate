@@ -44,7 +44,8 @@ lint:
 	go vet ./...
 	go vet -tags difftest ./...
 	@if command -v staticcheck >/dev/null 2>&1; then \
-		staticcheck ./... && staticcheck -tags difftest ./...; \
+		echo "staticcheck ./..." && staticcheck ./... && \
+		echo "staticcheck -tags difftest ./..." && staticcheck -tags difftest ./...; \
 	else \
 		echo "staticcheck not installed; skipping (go install honnef.co/go/tools/cmd/staticcheck@latest)"; \
 	fi

@@ -16,7 +16,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"strings"
+
+	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
 )
 
 // Layout is the top-level box order. Values match synth_heic.py's strings.
@@ -123,7 +124,7 @@ func BuildSyntheticHEIC(o Options) ([]byte, error) {
 	exifBlob := cat(be32(6), []byte("Exif\x00\x00"), exifTIFF)
 
 	if o.ExifPosition != ExifEnd && o.ExifPosition != ExifMiddle {
-		return nil, fmt.Errorf("unknown exif_position %s", pyStrRepr(string(o.ExifPosition)))
+		return nil, fmt.Errorf("unknown exif_position %s", pyfmt.StrRepr(string(o.ExifPosition)))
 	}
 
 	mdatContent := bytes.Clone(o.MdatPayload)
@@ -238,7 +239,7 @@ func BuildSyntheticHEIC(o Options) ([]byte, error) {
 	case MetaFirst:
 		mdatContentAbsStart = len(ftyp) + len(metaPlaceholder) + 8
 	default:
-		return nil, fmt.Errorf("unknown layout %s", pyStrRepr(string(o.Layout)))
+		return nil, fmt.Errorf("unknown layout %s", pyfmt.StrRepr(string(o.Layout)))
 	}
 
 	// Pass 2: rebuild with the real absolute offsets now that we know them.
@@ -251,37 +252,4 @@ func BuildSyntheticHEIC(o Options) ([]byte, error) {
 		return cat(ftyp, mdat, extraMdatBox, meta), nil
 	}
 	return cat(ftyp, meta, mdat, extraMdatBox), nil
-}
-
-// pyStrRepr renders s the way Python's repr() renders a str, for the
-// characters an option value can plausibly contain (error-message parity
-// with synth_heic.py's ValueError text).
-func pyStrRepr(s string) string {
-	quote := "'"
-	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
-		quote = `"`
-	}
-	var b strings.Builder
-	b.WriteString(quote)
-	for _, r := range s {
-		switch {
-		case r == '\\':
-			b.WriteString(`\\`)
-		case string(r) == quote:
-			b.WriteByte('\\')
-			b.WriteString(quote)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteString(quote)
-	return b.String()
 }

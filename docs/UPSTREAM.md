@@ -53,8 +53,8 @@ Naming rules are in [DESIGN.md § Naming Rules](DESIGN.md#naming-rules-python--g
 | `PROVENANCE_UUID` | `var ProvenanceUUID = [16]byte{0xe8,0x50,0x77,0x7c,…}` (`e850777c-3416-50a4-9fa8-6493cfc13f31`). Hardcoded, with a test re-deriving it as UUIDv5(NAMESPACE_URL, `urn:heic_rotate.py:provenance:v1`). |
 | `read_box_header(data, pos)` | `ReadBoxHeader(data []byte, pos int) (BoxHeader, bool, error)` (`ok=false` is Python's `None` at EOF) |
 | `iter_boxes(data, start, end)` | `IterBoxes(data []byte, start, end int) iter.Seq2[BoxHeader, error]`. Stays **lazy**: Python's `find_child` stops before reaching a malformed later box, and that acceptance behavior must match. |
-| `find_child` | `FindChild(data, start, end int, boxtype [4]byte) (BoxHeader, bool, error)` |
-| `find_unique_child` | `FindUniqueChild(data, start, end, boxtype, context string) (BoxHeader, bool, error)` |
+| `find_child` | `FindChild(data []byte, start, end int, boxtype string) (BoxHeader, bool, error)` |
+| `find_unique_child` | `FindUniqueChild(data []byte, start, end int, boxtype, context string) (BoxHeader, bool, error)` |
 | `parse_pitm` | `ParsePitm(data, cStart, cEnd int) (uint32, error)` |
 | `parse_ipma` / `build_ipma` | `ParseIpma(...) (version uint8, flags uint32, entries []IpmaEntry, err error)` / `BuildIpma(version, flags, entries) ([]byte, error)` |
 | `parse_ipco_children` | `ParseIpcoChildren(...) ([]BoxHeader, error)` |
@@ -67,14 +67,14 @@ Naming rules are in [DESIGN.md § Naming Rules](DESIGN.md#naming-rules-python--g
 | `crc32_excluding_range` | `Crc32ExcludingRange(data, exclStart, exclEnd int) uint32` |
 | `find_provenance_box` | `FindProvenanceBox(data) (BoxHeader, bool, error)` |
 | `parse_provenance` / `parse_provenance_lenient` | `ParseProvenance(data, hdr) (uint8, ProvenanceEntries, error)` / `ParseProvenanceLenient(data, hdr) (uint8, ProvenanceEntries, bool, error)` |
-| `build_provenance_box` | `BuildProvenanceBox(version uint8, entries ProvenanceEntries) []byte` (keys emitted in sorted order, as in Python) |
+| `build_provenance_box` | `BuildProvenanceBox(version uint8, entries ProvenanceEntries) ([]byte, error)` (keys in sorted order, as in Python; Python's asserts on tag length and entry count are errors) |
 | `locate_structures` | `LocateStructures(data) (*Structures, error)` |
-| `_rotation_from_iprp_range` / `_extract_irot_state` | `rotationFromIprpRange` / `extractIrotState` |
+| `_rotation_from_iprp_range` / `_extract_irot_state` | `rotationFromIprpRange(...) (int, error)` / `extractIrotState(...) (hadIrot bool, irotByte byte, ipmaFlags uint32, err error)` |
 | `get_current_rotation` / `get_rotation_from_iprp_snapshot` | `GetCurrentRotation` / `GetRotationFromIprpSnapshot` |
 | `apply_rotation(data, delta_turns, sync_exif=True, verbose=True)` | `ApplyRotation(data []byte, deltaTurns int, opts RotateOptions) ([]byte, error)`; `RotateOptions{NoExifSync bool; Log io.Writer}` |
-| `_restore_meta_provenance_span` | `restoreMetaProvenanceSpan(span []byte, entries, log) ([]byte, error)` |
-| `_prepare_reversal` | `prepareReversal(...) (*reversal, error)` |
-| `_iter_reconstructed_chunks` | `iterReconstructedChunks(data, r *reversal) iter.Seq[[]byte]` (sub-slices of `data`, no copies) |
+| `_restore_meta_provenance_span` | `restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logger) ([]byte, error)` |
+| `_prepare_reversal` | `prepareReversal(data []byte, ignoreTamper bool, log logger) (*reversal, error)` |
+| `_iter_reconstructed_chunks` | `iterReconstructedChunks(data []byte, r *reversal) iter.Seq[[]byte]` (sub-slices of `data`, no copies), called through the package variable `reconstructedChunks` (the test seam upstream monkeypatches) |
 | `reverse_rotation(data, ignore_tamper=False, verbose=True)` | `ReverseRotation(data, opts ReverseOptions) ([]byte, error)`; `ReverseOptions{IgnoreTamper bool; Log io.Writer}` |
 | `verify_reversible` | `VerifyReversible(data, opts ReverseOptions) error` |
 | `gather_info` | `GatherInfo(data) (*Info, error)` |

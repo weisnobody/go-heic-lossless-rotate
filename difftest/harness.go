@@ -173,20 +173,25 @@ type Request struct {
 	Op        string            `json:"op"`
 	Args      map[string]any    `json:"args,omitempty"`
 	BytesArgs map[string][]byte `json:"bytes_args,omitempty"` // base64 in JSON
+	InputArgs map[string]string `json:"input_args,omitempty"` // kwarg -> Drive input name
+	Timeout   float64           `json:"timeout,omitempty"`    // seconds; 0 = the driver's default (5)
 }
 
-// Response is one pydriver.py result: exactly one of Out or Err is set.
+// Response is one pydriver.py result.
 type Response struct {
-	ID  string
-	Out []byte
-	Err string // "<PythonExceptionType>: <message>"
+	ID   string          `json:"id"`
+	Out  []byte          `json:"out"`  // the op's bytes result, if any
+	JSON json.RawMessage `json:"json"` // the op's structured result, if any
+	Log  string          `json:"log"`  // everything the op printed (verbose output)
+	Err  string          `json:"err"`  // "<PythonExceptionType>: <message>", or "" on success
 }
 
-var validID = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+var validID = regexp.MustCompile(`^[A-Za-z0-9_.:/=#-]+$`)
 
 // Drive runs every request through a single pydriver.py process and returns
-// the responses in request order.
-func (p *Py) Drive(t testing.TB, reqs []Request) []Response {
+// the responses in request order. inputs are byte strings that requests
+// reference by name through InputArgs, so each is sent only once.
+func (p *Py) Drive(t testing.TB, inputs map[string][]byte, reqs []Request) []Response {
 	t.Helper()
 	seen := map[string]bool{}
 	for _, r := range reqs {
@@ -194,19 +199,21 @@ func (p *Py) Drive(t testing.TB, reqs []Request) []Response {
 			t.Fatalf("invalid or duplicate request id %q", r.ID)
 		}
 		seen[r.ID] = true
+		for _, name := range r.InputArgs {
+			if _, ok := inputs[name]; !ok {
+				t.Fatalf("request %q references unknown input %q", r.ID, name)
+			}
+		}
 	}
 
 	dir := t.TempDir()
-	reqPath := filepath.Join(dir, "requests.json")
-	outDir := filepath.Join(dir, "out")
-	if err := os.Mkdir(outDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	reqJSON, err := json.Marshal(reqs)
+	batchPath := filepath.Join(dir, "batch.json")
+	resultsPath := filepath.Join(dir, "results.jsonl")
+	batch, err := json.Marshal(map[string]any{"inputs": inputs, "requests": reqs})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(reqPath, reqJSON, 0o644); err != nil {
+	if err := os.WriteFile(batchPath, batch, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	driver, err := filepath.Abs("pydriver.py")
@@ -214,27 +221,96 @@ func (p *Py) Drive(t testing.TB, reqs []Request) []Response {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(p.Python, "-P", driver, reqPath, outDir)
+	cmd := exec.Command(p.Python, "-P", driver, batchPath, resultsPath)
 	cmd.Dir = dir
 	cmd.Env = p.env("src", "tests")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("pydriver.py (Python %s) failed: %v\n%s", p.Version, err, out)
 	}
 
+	f, err := os.Open(resultsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
 	resps := make([]Response, len(reqs))
 	for i, r := range reqs {
-		resps[i].ID = r.ID
-		if out, err := os.ReadFile(filepath.Join(outDir, r.ID+".bin")); err == nil {
-			resps[i].Out = out
-			continue
+		if err := dec.Decode(&resps[i]); err != nil {
+			t.Fatalf("reading pydriver.py result %d (%s): %v", i, r.ID, err)
 		}
-		msg, err := os.ReadFile(filepath.Join(outDir, r.ID+".err"))
-		if err != nil {
-			t.Fatalf("pydriver.py produced no result for request %q", r.ID)
+		if resps[i].ID != r.ID {
+			t.Fatalf("pydriver.py result %d is for %q, want %q", i, resps[i].ID, r.ID)
 		}
-		resps[i].Err = string(msg)
 	}
 	return resps
+}
+
+// Error classes, for ClassifyErr.
+const (
+	ErrClassMatch = ""   // identical outcome
+	CompatD2      = "D2" // Python crashed (IndexError, struct.error, KeyError, ...)
+	CompatD4      = "D4" // Python crashed with OverflowError on a negative iloc offset
+	CompatD5      = "D5" // Go refused a >64-bit iloc value Python accepted
+	CompatD6      = "D6" // Python hung (zero-size 64-bit box)
+	CompatD7      = "D7" // Go refused a runaway zero-width iloc extent count
+)
+
+// typed reports whether a Python error string is one of upstream's own
+// exception types, whose messages the port must reproduce exactly.
+func typed(pyErr string) bool {
+	return strings.HasPrefix(pyErr, "BoxParseError: ") || strings.HasPrefix(pyErr, "ProvenanceError: ")
+}
+
+// goErrString renders a Go error the way pydriver.py renders a Python one.
+func goErrString(err error) string {
+	var be *heicrotate.BoxParseError
+	var pe *heicrotate.ProvenanceError
+	switch {
+	case err == nil:
+		return ""
+	case errors.As(err, &be):
+		return "BoxParseError: " + be.Msg
+	case errors.As(err, &pe):
+		return "ProvenanceError: " + pe.Msg
+	default:
+		return fmt.Sprintf("%T: %v", err, err)
+	}
+}
+
+// ClassifyErr compares a Python outcome (pyErr, "" on success) with Go's
+// (goErr). ok is false for an unexplained difference. compat names the
+// docs/COMPAT.md entry that explains an allowed difference ("" if the
+// outcomes are identical):
+//   - Python succeeded: Go must succeed - except for the D5/D7 refusals.
+//   - Python raised BoxParseError/ProvenanceError: Go must return the same
+//     type with the same message.
+//   - Python crashed or hung: Go must return a *BoxParseError or
+//     *ProvenanceError (any message).
+func ClassifyErr(pyErr string, goErr error) (ok bool, compat string) {
+	goStr := goErrString(goErr)
+	switch {
+	case pyErr == "" && goErr == nil:
+		return true, ErrClassMatch
+	case pyErr == "":
+		if strings.Contains(goStr, "doesn't fit in 64 bits") {
+			return true, CompatD5
+		}
+		if strings.Contains(goStr, "zero-width extents") {
+			return true, CompatD7
+		}
+		return false, ""
+	case typed(pyErr):
+		return pyErr == goStr, ErrClassMatch
+	case !typed(goStr):
+		return false, ""
+	case strings.HasPrefix(pyErr, "TimeoutError: "):
+		return true, CompatD6
+	case strings.HasPrefix(pyErr, "OverflowError: "):
+		return true, CompatD4
+	default:
+		return true, CompatD2
+	}
 }
 
 // DiffBytes reports an error if got differs from want, pinpointing the

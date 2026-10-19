@@ -132,7 +132,7 @@ func TestSynthMatchesPython(t *testing.T) {
 	for i, c := range cases {
 		reqs[i] = c.request(fmt.Sprintf("c%04d", i))
 	}
-	resps := py.Drive(t, reqs)
+	resps := py.Drive(t, nil, reqs)
 	t.Logf("compared %d synth cases against Python %s", len(cases), py.Version)
 
 	for i, c := range cases {
