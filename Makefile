@@ -7,14 +7,18 @@ UPSTREAM_REPO   ?= https://github.com/olegoz/heic-lossless-rotate.git
 UPSTREAM_COMMIT := $(shell cat difftest/upstream.commit)
 UPSTREAM_DIR    ?= .upstream
 
-.PHONY: all build test difftest upstream fmt lint clean
+.PHONY: all build run test difftest upstream fmt lint clean
 
 all: fmt lint test build
 
-## build: compile all packages; cmd/* binaries land in ./bin/
+## build: compile all packages; the heic-rotate and heic-lossless-rotate binaries land in ./bin/
 build:
 	go build ./...
 	@if [ -d cmd ]; then mkdir -p bin && go build -o bin/ ./cmd/...; fi
+
+## run: build, then run heic-rotate with ARGS (e.g. make run ARGS="info photo.heic")
+run: build
+	./bin/heic-rotate $(ARGS)
 
 ## test: unit tests (no Python required)
 test:
