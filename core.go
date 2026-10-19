@@ -19,6 +19,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"iter"
+	"math/big"
+	"math/bits"
 	"strconv"
 	"strings"
 
@@ -393,6 +395,336 @@ func makeBox(boxtype string, content []byte) []byte {
 // ParseIpcoChildren returns ipco's child property boxes (← parse_ipco_children).
 func ParseIpcoChildren(data []byte, cStart, cEnd int) ([]BoxHeader, error) {
 	return listBoxes(data, cStart, cEnd)
+}
+
+// ---------------------------------------------------------------------------
+// iloc - Item Location box (full parse, with enough info to rebuild
+// identically except for patched offset values)
+// ---------------------------------------------------------------------------
+
+// Iloc is parse_iloc's dict: everything needed to rebuild the box content
+// byte for byte.
+type Iloc struct {
+	Version                                           uint8
+	Flags                                             uint32
+	OffsetSize, LengthSize, BaseOffsetSize, IndexSize int // field widths in bytes (0-15)
+	Items                                             []IlocItem
+}
+
+// IlocItem is one parse_iloc item.
+type IlocItem struct {
+	ItemID       uint32
+	ConstrMethod int
+	// RawConstrField is the 12 reserved bits + 4-bit construction_method,
+	// kept raw so reserved bits round-trip exactly. nil for iloc v0
+	// (Python None), which has no such field.
+	RawConstrField *uint16
+	DataRefIndex   uint16
+	BaseOffset     uint64
+	Extents        []IlocExtent
+}
+
+// IlocExtent is one [ext_index, ext_offset, ext_length] extent. Index is nil
+// when index_size is 0 (Python None).
+type IlocExtent struct {
+	Index          *uint64
+	Offset, Length uint64
+}
+
+// ParseIloc parses iloc box content (← parse_iloc).
+func ParseIloc(data []byte, cStart, cEnd int) (*Iloc, error) {
+	version, err := pyIndex(data, cStart)
+	if err != nil {
+		return nil, err
+	}
+	flags, _ := intFromBytes(data, cStart+1, 3)
+	pos := cStart + 4
+	b, err := pyIndex(data, pos)
+	if err != nil {
+		return nil, err
+	}
+	pos++
+	b2, err := pyIndex(data, pos)
+	if err != nil {
+		return nil, err
+	}
+	pos++
+	iloc := &Iloc{
+		Version:        version,
+		Flags:          uint32(flags),
+		OffsetSize:     int(b >> 4),
+		LengthSize:     int(b & 0xf),
+		BaseOffsetSize: int(b2 >> 4),
+	}
+	v12 := version == 1 || version == 2
+	if v12 {
+		iloc.IndexSize = int(b2 & 0xf)
+	}
+
+	readU16 := func() (uint16, error) {
+		v, err := unpackU16(data, pos)
+		pos += 2
+		return v, err
+	}
+	readU32 := func() (uint32, error) {
+		v, err := unpackU32(data, pos)
+		pos += 4
+		return v, err
+	}
+	readID := func() (uint32, error) { // H for version < 2, else I
+		if version < 2 {
+			v, err := readU16()
+			return uint32(v), err
+		}
+		return readU32()
+	}
+	readInt := func(n int) (uint64, error) {
+		if n == 0 {
+			return 0, nil
+		}
+		v, err := intFromBytes(data, pos, n)
+		pos += n
+		return v, err
+	}
+
+	itemCount, err := readID()
+	if err != nil {
+		return nil, err
+	}
+	// Counts come from the file: grow as bytes are consumed instead of
+	// preallocating. Zero-width fields consume no bytes at all, so cap the
+	// total number of extents: real extents can't outnumber the file's
+	// bytes, but crafted counts could otherwise build billions
+	// (docs/COMPAT.md D7).
+	totalExtents := 0
+	for range itemCount {
+		var it IlocItem
+		if it.ItemID, err = readID(); err != nil {
+			return nil, err
+		}
+		if v12 {
+			raw, err := readU16()
+			if err != nil {
+				return nil, err
+			}
+			it.RawConstrField = &raw
+			it.ConstrMethod = int(raw & 0xf)
+		}
+		if it.DataRefIndex, err = readU16(); err != nil {
+			return nil, err
+		}
+		if it.BaseOffset, err = readInt(iloc.BaseOffsetSize); err != nil {
+			return nil, err
+		}
+		extentCount, err := readU16()
+		if err != nil {
+			return nil, err
+		}
+		totalExtents += int(extentCount)
+		if totalExtents > len(data) {
+			return nil, boxParseErrorf("iloc declares more extents (%d so far) than the data has bytes (%d)",
+				totalExtents, len(data))
+		}
+		for range extentCount {
+			var ext IlocExtent
+			if iloc.IndexSize != 0 {
+				idx, err := readInt(iloc.IndexSize)
+				if err != nil {
+					return nil, err
+				}
+				ext.Index = &idx
+			}
+			if ext.Offset, err = readInt(iloc.OffsetSize); err != nil {
+				return nil, err
+			}
+			if ext.Length, err = readInt(iloc.LengthSize); err != nil {
+				return nil, err
+			}
+			it.Extents = append(it.Extents, ext)
+		}
+		iloc.Items = append(iloc.Items, it)
+	}
+	if pos != cEnd {
+		return nil, boxParseErrorf("iloc parse mismatch: consumed %d, expected %d", pos-cStart, cEnd-cStart)
+	}
+	return iloc, nil
+}
+
+// errIlocFieldOverflow is put_int's error for a value wider than its field.
+// val is a decimal string because a patched value may exceed 64 bits.
+func errIlocFieldOverflow(val string, n int) *BoxParseError {
+	return boxParseErrorf("patched iloc offset %s overflows original field width "+
+		"(%d bytes) - file needs a wider iloc field than the original, which "+
+		"this script does not (yet) upgrade", val, n)
+}
+
+// putInt mirrors build_iloc_content's put_int for a value already known to
+// be non-negative and to fit in 64 bits.
+func putInt(dst []byte, n int, val uint64) ([]byte, error) {
+	if n == 0 {
+		if val != 0 {
+			return nil, boxParseErrorf("value doesn't fit in zero-width iloc field")
+		}
+		return dst, nil
+	}
+	if n < 8 && val > (uint64(1)<<(8*n))-1 {
+		return nil, errIlocFieldOverflow(strconv.FormatUint(val, 10), n)
+	}
+	for i := n - 1; i >= 0; i-- { // big-endian, zero-padded beyond 8 bytes
+		if i < 8 {
+			dst = append(dst, byte(val>>(8*i)))
+		} else {
+			dst = append(dst, 0)
+		}
+	}
+	return dst, nil
+}
+
+// BuildIlocContent rebuilds iloc box CONTENT (no 8-byte header) with the
+// same field widths, flags, and reserved bits as the original - only the
+// numeric offset/length values deliberately changed differ
+// (← build_iloc_content).
+func BuildIlocContent(iloc *Iloc) ([]byte, error) {
+	v12 := iloc.Version == 1 || iloc.Version == 2
+	body := []byte{iloc.Version, byte(iloc.Flags >> 16), byte(iloc.Flags >> 8), byte(iloc.Flags)}
+	idx := 0
+	if v12 {
+		idx = iloc.IndexSize
+	}
+	body = append(body, byte(iloc.OffsetSize<<4|iloc.LengthSize), byte(iloc.BaseOffsetSize<<4|idx))
+	putID := func(v uint32) {
+		if iloc.Version < 2 {
+			body = binary.BigEndian.AppendUint16(body, uint16(v))
+		} else {
+			body = binary.BigEndian.AppendUint32(body, v)
+		}
+	}
+	putID(uint32(len(iloc.Items)))
+	var err error
+	for _, it := range iloc.Items {
+		putID(it.ItemID)
+		if v12 {
+			// Echo back the original reserved+construction_method field
+			// verbatim - we never change construction_method ourselves.
+			var raw uint16
+			if it.RawConstrField != nil {
+				raw = *it.RawConstrField
+			}
+			body = binary.BigEndian.AppendUint16(body, raw)
+		}
+		body = binary.BigEndian.AppendUint16(body, it.DataRefIndex)
+		if body, err = putInt(body, iloc.BaseOffsetSize, it.BaseOffset); err != nil {
+			return nil, err
+		}
+		body = binary.BigEndian.AppendUint16(body, uint16(len(it.Extents)))
+		for _, ext := range it.Extents {
+			if iloc.IndexSize != 0 {
+				var index uint64
+				if ext.Index != nil {
+					index = *ext.Index
+				}
+				if body, err = putInt(body, iloc.IndexSize, index); err != nil {
+					return nil, err
+				}
+			}
+			if body, err = putInt(body, iloc.OffsetSize, ext.Offset); err != nil {
+				return nil, err
+			}
+			if body, err = putInt(body, iloc.LengthSize, ext.Length); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return body, nil
+}
+
+// PatchIlocOffsetsAtThreshold shifts every absolute-offset iloc extent that
+// points at or past threshold by delta, returning the rebuilt iloc content
+// and whether anything changed (← patch_iloc_offsets_at_threshold).
+//
+// Deliberately patches at the EXTENT level only, and never touches
+// base_offset - the standard allows any split between base_offset and
+// per-extent offset. Computing each extent's TRUE absolute position as
+// base_offset + extent_offset and comparing THAT against the threshold, then
+// adjusting only the extent field, is correct regardless of how a given
+// encoder chose to apportion the two - including a single item's extents
+// straddling the threshold, which a base-offset-oriented patch cannot
+// represent.
+//
+// Python's integers are unbounded, so a patched value can go negative or
+// past 64 bits before build_iloc_content's put_int rejects it. Those values
+// are checked here, in the same order put_int would meet them: an
+// over-wide value gets Python's own overflow message; a negative one, which
+// Python crashes on (OverflowError), is a *BoxParseError (COMPAT D4); one
+// that only fits a field wider than 8 bytes is refused (COMPAT D5).
+func PatchIlocOffsetsAtThreshold(data []byte, ilocHdr *BoxHeader, threshold, delta int) ([]byte, bool, error) {
+	if ilocHdr == nil {
+		return nil, false, nil
+	}
+	iloc, err := ParseIloc(data, ilocHdr.ContentStart, ilocHdr.ContentEnd)
+	if err != nil {
+		return nil, false, err
+	}
+	anyChanged := false
+	for i := range iloc.Items {
+		it := &iloc.Items[i]
+		if it.ConstrMethod != 0 {
+			continue // idat-relative or item-relative: not a file offset
+		}
+		for j := range it.Extents {
+			ext := &it.Extents[j]
+			abs, carry := bits.Add64(it.BaseOffset, ext.Offset, 0)
+			if carry == 0 && abs < uint64(threshold) {
+				continue
+			}
+			patched, err := shiftIlocOffset(ext.Offset, delta, iloc.OffsetSize)
+			if err != nil {
+				return nil, false, err
+			}
+			ext.Offset = patched
+			anyChanged = true
+		}
+	}
+	if !anyChanged {
+		return nil, false, nil
+	}
+	content, err := BuildIlocContent(iloc)
+	if err != nil {
+		return nil, false, err
+	}
+	return content, true, nil
+}
+
+// shiftIlocOffset computes off + delta for an n-byte iloc field, reporting
+// the error build_iloc_content's put_int would raise for the result.
+func shiftIlocOffset(off uint64, delta, n int) (uint64, error) {
+	if n == 0 { // put_int checks width 0 first - even for a negative value
+		if delta != 0 { // a zero-width field always reads as 0
+			return 0, boxParseErrorf("value doesn't fit in zero-width iloc field")
+		}
+		return 0, nil
+	}
+	if delta < 0 {
+		d := uint64(-delta)
+		if off < d {
+			return 0, boxParseErrorf("patched iloc offset %d would be negative "+
+				"(shifting %d by %d)", int64(off)-int64(d), off, delta)
+		}
+		return off - d, nil
+	}
+	sum, carry := bits.Add64(off, uint64(delta), 0)
+	if carry != 0 { // Python's value is 2^64 + sum
+		v := new(big.Int).Lsh(big.NewInt(1), 64)
+		v.Add(v, new(big.Int).SetUint64(sum))
+		if n <= 8 {
+			return 0, errIlocFieldOverflow(v.String(), n)
+		}
+		return 0, boxParseErrorf("patched iloc offset %s doesn't fit in 64 bits", v.String())
+	}
+	if n < 8 && sum > (uint64(1)<<(8*n))-1 {
+		return 0, errIlocFieldOverflow(strconv.FormatUint(sum, 10), n)
+	}
+	return sum, nil
 }
 
 // @@SECTIONS@@
