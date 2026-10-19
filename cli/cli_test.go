@@ -273,30 +273,6 @@ func TestCLI(t *testing.T) {
 	})
 }
 
-// From TestProvenanceVersionAndSelfCheck (group 2), deferred to the CLI port.
-func TestCLISelfCheckAbortsAndWritesNothingOnFailure(t *testing.T) {
-	tmpdir := t.TempDir()
-	input, outPath := filepath.Join(tmpdir, "input.heic"), filepath.Join(tmpdir, "out.heic")
-	mustSynthFile(t, input, nil)
-
-	real := verifyReversible
-	t.Cleanup(func() { verifyReversible = real })
-	verifyReversible = func([]byte, heicrotate.ReverseOptions) error {
-		return &heicrotate.ProvenanceError{Msg: "simulated failure"}
-	}
-	rc, _, stderr := runCLI("rotate", "90", input, outPath)
-	if rc != heicrotate.ErrorExitCode || !strings.Contains(strings.ToLower(stderr), "self-check") {
-		t.Errorf("rc %d, stderr %q", rc, stderr)
-	}
-	want := "error: post-rotate reversibility self-check failed - refusing to write output: simulated failure\n"
-	if stderr != want {
-		t.Errorf("stderr = %q, want %q", stderr, want)
-	}
-	if exists(outPath) {
-		t.Error("rotate must not write output if the post-rotate self-check fails")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // 5. CLI output-path robustness (the CLI half of upstream group 5)
 // ---------------------------------------------------------------------------
@@ -369,7 +345,8 @@ func TestDryRunSizeReport(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Go-only: -G (docs/COMPAT.md E1), D1 naming, exact error text
+// Go-only: -G (docs/COMPAT.md E1) and exact error text. (Default naming and
+// the post-rotate self-check moved to the root package's file API tests.)
 // ---------------------------------------------------------------------------
 
 func TestGoVersionFlag(t *testing.T) {
@@ -384,30 +361,6 @@ func TestGoVersionFlag(t *testing.T) {
 	}
 	if _, out, _ := runCLI("-V"); strings.Contains(out, "+go.") {
 		t.Errorf("-V must report only the upstream version: %q", out)
-	}
-}
-
-func TestDefaultOutputNaming(t *testing.T) {
-	tests := []struct{ input, rotate, reverse string }{
-		{"photo.heic", "photo_rotated.heic", "photo_restored.heic"},
-		{"dir/photo.HEIC", "dir/photo_rotated.heic", "dir/photo_restored.heic"},
-		{"photo_restored.heic", "photo.heic", "photo_restored_restored.heic"},
-		{"photo", "photo_rotated.heic", "photo_restored.heic"},
-		{"photo.", "photo_rotated.heic", "photo_restored.heic"},
-		{"a.tar.heic", "a.tar_rotated.heic", "a.tar_restored.heic"},
-		{"..heic", "._rotated.heic", "._restored.heic"},
-		// D1: Python gives "dir_rotated.heic" and "_rotated.heic" for these.
-		{"dir.v2/photo", "dir.v2/photo_rotated.heic", "dir.v2/photo_restored.heic"},
-		{".hidden", ".hidden_rotated.heic", ".hidden_restored.heic"},
-		{"dir/.hidden", "dir/.hidden_rotated.heic", "dir/.hidden_restored.heic"},
-	}
-	for _, tt := range tests {
-		if got := defaultRotateOutput(tt.input); got != tt.rotate {
-			t.Errorf("defaultRotateOutput(%q) = %q, want %q", tt.input, got, tt.rotate)
-		}
-		if got := defaultReverseOutput(tt.input); got != tt.reverse {
-			t.Errorf("defaultReverseOutput(%q) = %q, want %q", tt.input, got, tt.reverse)
-		}
 	}
 }
 
@@ -434,5 +387,9 @@ func TestErrorMessages(t *testing.T) {
 	}
 	if err := errors.New("x"); errorText(err) != "x" {
 		t.Error("errorText fallback")
+	}
+	// Wrapped core errors print their own message, as Python's {e} does.
+	if got := errorText(&heicrotate.ProvenanceError{Msg: "post-rotate reversibility self-check failed - refusing to write output: x"}); got != "post-rotate reversibility self-check failed - refusing to write output: x" {
+		t.Errorf("errorText(ProvenanceError) = %q", got)
 	}
 }

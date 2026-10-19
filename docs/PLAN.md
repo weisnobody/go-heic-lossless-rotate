@@ -88,15 +88,19 @@ measured against the real upstream tool from day one.
       [plans/2026-10-19-implementation-phase-3.md](plans/2026-10-19-implementation-phase-3.md).
 
 ### Phase 4: File API (`file.go`)
-- [ ] `RotateFile(in, out string, deltaTurns int, opts FileOptions) (Result, error)`,
+- [x] `RotateFile(in, out string, deltaTurns int, opts FileOptions) (Result, error)`,
       `ReverseFile(...)`, `InfoFile(path) (*Info, error)`, with
       `FileOptions{Force, DryRun, NoExifSync, IgnoreTamper bool; Log io.Writer}`.
       `Result` reports the output path, size, and delta vs input (for the
       `[ok] wrote …` and `[dry-run] …` lines).
-- [ ] `DefaultRotateOutput(in)` / `DefaultReverseOutput(in)` (D1), exported
-- [ ] Atomic temp-and-rename write (D3), overwrite refusal, mode preservation
-- [ ] Refactor `cli.run` onto the file API. The difftest must stay green.
-- [ ] Port `TestSameFileInputOutput` and `TestDryRunSizeReport` at the file-API level
+- [x] `DefaultRotateOutput(in)` / `DefaultReverseOutput(in)` (D1), exported
+- [x] Atomic temp-and-rename write (D3), overwrite refusal, mode preservation
+- [x] Refactor `cli.run` onto the file API. The difftest must stay green.
+- [x] Port `TestSameFileInputOutput` and `TestDryRunSizeReport` at the file-API level
+- [x] Result (2026-10-19): D3 writes match Python's in-place write in every probed case
+      (symlinks, dangling links, modes, read-only outputs and directories, hard links). The CLI
+      gate grew to 2,566 cases and now compares modes and symlinks. See
+      [plans/2026-10-19-implementation-phase-4.md](plans/2026-10-19-implementation-phase-4.md).
 
 ### Phase 5: Streaming engine (`stream.go`)
 - [ ] Spliced view (`io.ReaderAt` over input ranges plus literal segments) and

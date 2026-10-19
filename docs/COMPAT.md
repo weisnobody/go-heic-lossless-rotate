@@ -10,9 +10,8 @@ skips Python-vs-Go comparisons only for cases tagged with one of these
 IDs. An unexplained difference is a bug, either in the port or in this
 page.
 
-> **Status:** D1, D2, D4–D7, OSERR, E1, and PYARGS are implemented and
-> checked by the difftest gates (core: Phase 2; CLI: Phase 3). D3 is
-> specified but lands with the Phase 4 file API.
+> **Status:** every entry is implemented and checked by the difftest gates
+> (core: Phase 2; CLI: Phase 3; D3: Phase 4).
 
 ---
 
@@ -24,7 +23,7 @@ page.
 | **Python** | `rotate`/`reverse` derive the default output path from `input.rsplit('.', 1)[0]` over the **whole path**, so a dot in a directory name, or a leading dot in the file name, counts as the extension. |
 | **Go** | The extension is stripped from the **base name only**, and a base name that *starts* with its only dot (a dot-file) has no extension. `.heic` is always appended, and the `_restored`-suffix stripping in `rotate` works as in Python. |
 | **Same for** | Every ordinary `dir/name.ext` input, which covers almost all real use. |
-| **Implemented in** | Phase 3 (CLI). Phase 4 exports it as `DefaultRotateOutput`/`DefaultReverseOutput`. |
+| **Implemented in** | `DefaultRotateOutput`/`DefaultReverseOutput` in `file.go` (used by the CLI) |
 
 | Input | Python `rotate` default | Go `rotate` default |
 |---|---|---|
@@ -54,11 +53,11 @@ about 2.3% of cases are D2.
 | | |
 |---|---|
 | **ID** | `D3` |
-| **Python** | Opens the output with `open(path, 'wb')` and writes in place, so a crash mid-write leaves a truncated file. |
-| **Go** | Writes to a temp file in the output's directory, fsyncs it, then renames it over the target. When `-f` overwrites an existing file, that file's mode is kept. New files get `0666 &^ umask`, as in Python. |
-| **Visible differences** | Overwriting replaces the inode: hard links to the old output aren't updated, and xattrs/ACLs on it aren't carried over. A stray `.heic-rotate-*` temp file can be left behind only if the process is killed between create and rename. |
-| **Same for** | Output bytes, messages, exit codes, the `-f` refusal, and in-place editing (`input == output`). |
-| **Implemented in** | Phase 4 |
+| **Python** | Opens the output with `open(path, 'wb')` and writes in place, so a crash or full disk mid-write leaves a truncated file. With input == output, that file is the original photo. |
+| **Go** | Writes a temp file in the output's directory, fsyncs it, and renames it over the target, so the output is either the old file or the complete new one. Everything else matches Python's in-place write: writes go **through symlinks** (a dangling link's target is created; the link is never replaced); a **directory** or **unwritable** output fails with Python's errno and message; **new files** get `0666` minus the umask; an **overwritten file keeps its mode** and, best effort, its owner; a **hard-linked** output is written in place (non-atomically, exactly like Python) so its other links see the change; error messages name the output path. |
+| **Visible differences** | Overwriting a file that isn't hard-linked replaces its inode: xattrs/ACLs on the old file aren't carried over, and the owner is restored only when permitted (as root) - otherwise the file is owned by you. A stray `.heic-rotate-*` temp file can be left only if the process is killed between creating and renaming it. |
+| **Same for** | Output bytes, messages, exit codes, the `-f` refusal, in-place editing (input == output), file modes, symlinks, and hard links - checked by the CLI difftest, which compares the filesystem state both tools leave behind. |
+| **Implemented in** | Phase 4 (`writeOutput` in `file.go`) |
 
 ## D4: Negative `iloc` offset after patching
 
