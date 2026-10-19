@@ -2095,7 +2095,244 @@ func VerifyReversible(data []byte, opts ReverseOptions) error {
 	return checkReconstructedCrc(r, crc, log)
 }
 
-// @@SECTIONS@@
+// ---------------------------------------------------------------------------
+// Info: cheap, read-only summary - no reconstruction, no heavy verification.
+// ---------------------------------------------------------------------------
+
+// Info is gather_info's dict. Pointer fields are nil where Python leaves the
+// key out.
+type Info struct {
+	// CurrentQuarterTurns is the live 'irot' value (0-3) on the primary item
+	// right now - including any rotation the file had before this tool
+	// touched it.
+	CurrentQuarterTurns int
+	HasProvenance       bool
+
+	// The rest is only set when HasProvenance is true.
+
+	// OriginalQuarterTurns is the rotation when heic-lossless-rotate FIRST
+	// touched the file; nil if the record has neither OPRP nor OIRT.
+	OriginalQuarterTurns *int
+	// DeltaQuarterTurns is how much heic-lossless-rotate has added on top
+	// of the original, cumulatively across every edit - the answer to "what
+	// did this tool do to it". Same nil rule as OriginalQuarterTurns.
+	DeltaQuarterTurns *int
+	Version           uint8 // provenance format version
+	VersionSupported  bool  // false if newer than FormatVersion or malformed
+	// ToolVersion is the (major, minor, patch) that most recently UPDATED
+	// the file; nil on records written before TVER existed.
+	ToolVersion *[3]uint8
+	// PCRC is the CRC32 of the TRUE ORIGINAL file - independently
+	// verifiable by hashing your own original file. (CCRC is deliberately
+	// not surfaced: it is computed with the provenance box excluded, so it
+	// isn't checkable with a plain whole-file CRC32 tool.)
+	PCRC                             *uint32
+	HasIlocSnapshot, HasExifSnapshot bool
+}
+
+// GatherInfo is a read-only summary of heic-lossless-rotate's provenance
+// state and the file's live rotation (← gather_info). It does none of the
+// heavy work rotate/reverse do - just parses what's already in the file.
+func GatherInfo(data []byte) (*Info, error) {
+	current, err := GetCurrentRotation(data)
+	if err != nil {
+		return nil, err
+	}
+	result := &Info{CurrentQuarterTurns: current}
+
+	info, err := LocateStructures(data)
+	if err != nil {
+		return nil, err
+	}
+	if info.ProvenanceHdr == nil {
+		return result, nil
+	}
+
+	version, entries, wellFormed, err := ParseProvenanceLenient(data, *info.ProvenanceHdr)
+	if err != nil {
+		return nil, err
+	}
+	result.HasProvenance = true
+	result.Version = version
+	result.VersionSupported = version <= FormatVersion && wellFormed
+	_, result.HasIlocSnapshot = entries["OILC"]
+	_, result.HasExifSnapshot = entries["OEXO"]
+
+	setOriginal := func(original int) {
+		delta := ((current-original)%4 + 4) % 4 // Python's % is never negative
+		result.OriginalQuarterTurns, result.DeltaQuarterTurns = &original, &delta
+	}
+	if oprp, ok := entries["OPRP"]; ok {
+		original, err := GetRotationFromIprpSnapshot(oprp, info.PrimaryItemID)
+		if err != nil {
+			return nil, err
+		}
+		setOriginal(original)
+	} else if oirt, ok := entries["OIRT"]; ok {
+		// length 1: 'irot' already existed originally - its masked value is
+		// the original rotation. length 0: none existed - 0 deg per spec.
+		original := 0
+		if len(oirt) == 1 {
+			original = int(oirt[0] & 0x3)
+		}
+		setOriginal(original)
+	}
+
+	if _, ok := entries["PCRC"]; ok {
+		pcrc, err := entryU32(entries, "PCRC")
+		if err != nil {
+			return nil, err
+		}
+		result.PCRC = &pcrc
+	}
+	if tver, ok := entries["TVER"]; ok && len(tver) == 3 {
+		result.ToolVersion = &[3]uint8{tver[0], tver[1], tver[2]}
+	}
+	return result, nil
+}
+
+// FormatInfo renders GatherInfo's result as text and returns the info exit
+// code (← format_info). text is "" when quiet (Python returns None).
+//
+// Exit code 0 is reserved EXCLUSIVELY for "no provenance record" (this tool
+// never touched the file). Once a record exists it is always non-zero:
+// 1/2/3 for a cumulative rotation ADDED BY THIS TOOL of 90/180/270 deg, or
+// 4 if the tool's net contribution is 0 deg (e.g. rotate 0 was used just to
+// add tracking, or opposing rotations cancelled out).
+func FormatInfo(result *Info, quiet bool) (text string, exitCode int) {
+	currentDegrees := result.CurrentQuarterTurns * 90
+
+	if !result.HasProvenance {
+		text = "Not rotated with heic-lossless-rotate (no provenance record found)."
+		if result.CurrentQuarterTurns != 0 {
+			text += fmt.Sprintf("\nNote: the file currently has its own 'irot' value "+
+				"of %d deg from elsewhere (not something this tool did).", currentDegrees)
+		}
+		if quiet {
+			return "", 0
+		}
+		return text, 0
+	}
+
+	// What heic-lossless-rotate itself did is the delta between the
+	// rotation it found on first touching the file and the rotation live
+	// now - NOT the absolute current value, which may also include rotation
+	// the file already had.
+	toolVersion := ""
+	if v := result.ToolVersion; v != nil {
+		toolVersion = fmt.Sprintf(" v%d.%d.%d", v[0], v[1], v[2])
+	}
+	first := fmt.Sprintf("Rotated with heic-lossless-rotate%s, provenance format v%d", toolVersion, result.Version)
+	if !result.VersionSupported {
+		first += fmt.Sprintf(" (NEWER than this script's v%d - shown info "+
+			"may be incomplete)", FormatVersion)
+	}
+	lines := []string{first + "."}
+	if result.DeltaQuarterTurns != nil {
+		lines = append(lines,
+			fmt.Sprintf("  heic-lossless-rotate has added: %d deg", *result.DeltaQuarterTurns*90),
+			fmt.Sprintf("  file's rotation: %d deg originally -> %d deg now", *result.OriginalQuarterTurns*90, currentDegrees))
+	} else {
+		lines = append(lines, fmt.Sprintf("  currently at: %d deg (original "+
+			"rotation snapshot unavailable - can't compute what "+
+			"this tool added specifically)", currentDegrees))
+	}
+	if result.PCRC != nil {
+		lines = append(lines, "  original file CRC32:      "+pyfmt.Hex08(*result.PCRC))
+	}
+	var extras []string
+	if result.HasIlocSnapshot {
+		extras = append(extras, "iloc snapshot")
+	}
+	if result.HasExifSnapshot {
+		extras = append(extras, "exif-orientation snapshot")
+	}
+	if len(extras) > 0 {
+		lines = append(lines, "  also recorded: "+strings.Join(extras, ", "))
+	}
+
+	exitCode = 4
+	if d := result.DeltaQuarterTurns; d != nil && *d != 0 {
+		exitCode = *d
+	}
+	if quiet {
+		return "", exitCode
+	}
+	return strings.Join(lines, "\n"), exitCode
+}
+
+// ---------------------------------------------------------------------------
+// Self-verification: re-walk the box tree of the OUTPUT file and assert every
+// container's children sizes sum exactly to its declared content size.
+// ---------------------------------------------------------------------------
+
+// VerifyStructure checks that every container this tool edits (top level,
+// meta, iprp, ipco) holds children that exactly fill it (← verify_structure).
+func VerifyStructure(data []byte) error {
+	checkContainer := func(cStart, cEnd int, label string) error {
+		pos := cStart
+		for pos < cEnd {
+			hdr, ok, err := ReadBoxHeader(data, pos)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return boxParseErrorf("%s: truncated box at %d", label, pos)
+			}
+			if hdr.ContentEnd > cEnd {
+				return boxParseErrorf("%s: child '%s' at %d overflows "+
+					"container end (%d > %d)", label, pyfmt.BytesRepr(hdr.Type[:]), hdr.Start, hdr.ContentEnd, cEnd)
+			}
+			if hdr.ContentEnd <= pos { // Python loops forever here (COMPAT D6)
+				return errZeroSizeBox(hdr)
+			}
+			pos = hdr.ContentEnd
+		}
+		if pos != cEnd {
+			return boxParseErrorf("%s: children end at %d, expected %d", label, pos, cEnd)
+		}
+		return nil
+	}
+
+	top, err := listBoxes(data, 0, len(data))
+	if err != nil {
+		return err
+	}
+	if err := checkContainer(0, len(data), "top-level"); err != nil {
+		return err
+	}
+	for _, hdr := range top {
+		if !hdr.Is("meta") {
+			continue
+		}
+		metaBody := hdr.ContentStart + 4
+		if err := checkContainer(metaBody, hdr.ContentEnd, "meta"); err != nil {
+			return err
+		}
+		for child, err := range IterBoxes(data, metaBody, hdr.ContentEnd) {
+			if err != nil {
+				return err
+			}
+			if !child.Is("iprp") {
+				continue
+			}
+			if err := checkContainer(child.ContentStart, child.ContentEnd, "iprp"); err != nil {
+				return err
+			}
+			for gc, err := range IterBoxes(data, child.ContentStart, child.ContentEnd) {
+				if err != nil {
+					return err
+				}
+				if gc.Is("ipco") {
+					if err := checkContainer(gc.ContentStart, gc.ContentEnd, "ipco"); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
 
 // ---------------------------------------------------------------------------
 // Exit code and -V text
