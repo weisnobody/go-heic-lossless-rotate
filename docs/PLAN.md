@@ -13,16 +13,17 @@ measured against the real upstream tool from day one.
 ## Implementation Order
 
 ### Phase 0: Scaffolding
-- [ ] `go mod init github.com/pjg/go-heic-lossless-rotate` (`go 1.23`), with `Makefile`
+- [x] `go mod init github.com/pjg/go-heic-lossless-rotate` (`go 1.23`), with `Makefile`
       targets `test`, `difftest`, `lint`, `build`
-- [ ] `version.go` (`Version = "1.7.1"`, `GoRevision = 1`, `GoVersion`,
+- [x] `version.go` (`Version = "1.7.1"`, `GoRevision = 1`, `GoVersion`,
       `GoVersionString()`), `doc.go`
 - [ ] Create the GitHub repo and configure the arena → GitHub push mirror (branches + tags)
-- [ ] `docs/UPSTREAM.md`: pinned commit `70d6c73`, the Python↔Go function map
+      *(owner: user; not done in the Phase 0–1 implementation)*
+- [x] `docs/UPSTREAM.md`: pinned commit `70d6c73`, the Python↔Go function map
       (from DESIGN.md), and a porting log
-- [ ] `docs/COMPAT.md` skeleton with D1–D5
-- [ ] `.gitignore`: `testdata/*`, `!testdata/.keep`, `rotated/`, `bin/`, `dist/`
-- [ ] CI (GitHub Actions on the mirror): `go vet`, `staticcheck`,
+- [x] `docs/COMPAT.md` skeleton with D1–D5
+- [x] `.gitignore`: `testdata/*`, `!testdata/.keep`, `rotated/`, `bin/`, `dist/`
+- [x] CI (GitHub Actions on the mirror): `go vet`, `staticcheck`,
       `go test -race ./...` on linux/macos/windows
 
 ### Phase 1: Test foundation
