@@ -2515,5 +2515,326 @@
 "no_exif_sync": false
 },
 "err": ""
+},
+{
+"argv": [
+"-qz"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: the following arguments are required: {rotate,reverse,info}"
+},
+{
+"argv": [
+"-qz",
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-qz",
+"-V"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-h",
+"-qz"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-hz"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-zh"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: the following arguments are required: {rotate,reverse,info}"
+},
+{
+"argv": [
+"-qz",
+"rotate",
+"90",
+"x",
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-qz",
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-q=1",
+"-h"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument -q/--quiet: ignored explicit argument '1'"
+},
+{
+"argv": [
+"--quiet=1",
+"-h"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument -q/--quiet: ignored explicit argument '1'"
+},
+{
+"argv": [
+"--dry-run=",
+"-h"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument --dry-run: ignored explicit argument ''"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--quiet=1",
+"-h"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument -q/--quiet: ignored explicit argument '1'"
+},
+{
+"argv": [
+"-qz",
+"-qy",
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-qz",
+"--bogus"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: the following arguments are required: {rotate,reverse,info}"
+},
+{
+"argv": [
+"-f-q",
+"-h"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument -f/--force: ignored explicit argument '-q'"
+},
+{
+"argv": [
+"-quiet",
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"-hz"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-hz"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-qz",
+"bogus"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument {rotate,reverse,info}: invalid choice: 'bogus' (choose from 'rotate', 'reverse', 'info')"
+},
+{
+"argv": [
+"-qz",
+"rotate",
+"45",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid choice: '45' (choose from '0', '90', '180', '270')"
+},
+{
+"argv": [
+"-Vz"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-zV"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: the following arguments are required: {rotate,reverse,info}"
+},
+{
+"argv": [
+"--he=1"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument -h/--help: ignored explicit argument '1'"
+},
+{
+"argv": [
+"-qf=1",
+"-h"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument -f/--force: ignored explicit argument '1'"
+},
+{
+"argv": [
+"-q-f",
+"-h"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument -q/--quiet: ignored explicit argument '-f'"
+},
+{
+"argv": [
+"-q=",
+"-h"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument -q/--quiet: ignored explicit argument ''"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-qfz"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: -z"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-qfz",
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
 }
 ]

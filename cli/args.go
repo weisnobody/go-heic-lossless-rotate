@@ -11,7 +11,8 @@ package cli
 //     consumed, so `rotate 45 x -h` fails before -h is reached;
 //   - -h, -V and -G act as soon as they are reached;
 //   - unknown options are collected and reported only at the end, so
-//     `--bogus -h` still shows help;
+//     `--bogus -h` still shows help - including the unknown tail of a
+//     combined short-flag group (`-qz` applies -q and defers -z);
 //   - the first top-level positional selects the subcommand, and everything
 //     after it belongs to the subcommand's parser.
 //
@@ -115,6 +116,7 @@ type optionMatch struct {
 	opt         *option
 	optString   string
 	explicitArg *string
+	sep         bool // the explicit argument came after '=' ("-q=1", "--quiet=1")
 }
 
 func (p *parser) lookup(optString string) *option {
@@ -141,7 +143,7 @@ func (p *parser) parseOptional(tok string, stderr io.Writer) (*optionMatch, bool
 	}
 	if name, value, ok := strings.Cut(tok, "="); ok {
 		if o := p.lookup(name); o != nil {
-			return &optionMatch{opt: o, optString: name, explicitArg: &value}, true, nil
+			return &optionMatch{opt: o, optString: name, explicitArg: &value, sep: true}, true, nil
 		}
 	}
 	// Abbreviations (allow_abbrev=True): a unique prefix of a long option,
@@ -173,7 +175,7 @@ func (p *parser) optionTuples(tok string) []optionMatch {
 			if o.long != "" && strings.HasPrefix(o.long, prefix) {
 				m := optionMatch{opt: o, optString: o.long}
 				if hasEq {
-					m.explicitArg = &explicit
+					m.explicitArg, m.sep = &explicit, true
 				}
 				out = append(out, m)
 			}
@@ -195,10 +197,14 @@ func (p *parser) optionTuples(tok string) []optionMatch {
 }
 
 // consumeOptional mirrors argparse's consume_optional for zero-argument
-// actions: it expands a combined short-flag group ("-qf"), validating the
-// WHOLE group before any of it takes effect (so "-hz" is an error, not
-// help), then applies each action in order.
-func (p *parser) consumeOptional(m *optionMatch, a *args, stdout, stderr io.Writer) error {
+// actions. A combined short-flag group ("-qf") expands one flag at a time:
+// an unknown character ends the group, leaving the flags before it in
+// effect and the rest ("-z" of "-qz") as an unrecognized argument, returned
+// in deferred and reported at the end. An explicit argument that came after
+// '=' or starts with '-' ("-q=1", "-f-q", "--quiet=1") is an immediate
+// error. The group's flags take effect only after the whole group has been
+// read, in order - so "-hz" still shows help.
+func (p *parser) consumeOptional(m *optionMatch, a *args, stdout, stderr io.Writer) (deferred string, err error) {
 	var actions []*option
 	for {
 		if m.explicitArg == nil {
@@ -206,22 +212,27 @@ func (p *parser) consumeOptional(m *optionMatch, a *args, stdout, stderr io.Writ
 			break
 		}
 		explicit := *m.explicitArg
-		// A flag takes no argument; argparse treats "-qf" as "-q" then "-f".
 		if len(m.optString) == 2 && m.optString[1] != '-' && explicit != "" {
+			if m.sep || explicit[0] == '-' {
+				return "", p.usageError(stderr, "argument %s: ignored explicit argument %s", optionNames(m.opt), pyRepr(explicit))
+			}
 			actions = append(actions, m.opt)
 			next := "-" + explicit[:1]
 			o := p.lookup(next)
 			if o == nil {
-				return p.usageError(stderr, "argument %s: ignored explicit argument %s", optionNames(m.opt), pyRepr(explicit))
+				deferred = "-" + explicit
+				break
 			}
-			rest := explicit[1:]
 			m = &optionMatch{opt: o, optString: next}
-			if rest != "" {
+			if rest := explicit[1:]; rest != "" {
+				if rest[0] == '=' {
+					rest, m.sep = rest[1:], true
+				}
 				m.explicitArg = &rest
 			}
 			continue
 		}
-		return p.usageError(stderr, "argument %s: ignored explicit argument %s", optionNames(m.opt), pyRepr(explicit))
+		return "", p.usageError(stderr, "argument %s: ignored explicit argument %s", optionNames(m.opt), pyRepr(explicit))
 	}
 	for _, o := range actions {
 		switch o.kind {
@@ -229,16 +240,16 @@ func (p *parser) consumeOptional(m *optionMatch, a *args, stdout, stderr io.Writ
 			a.setFlag(o.dest)
 		case kindHelp:
 			fmt.Fprint(stdout, p.formatHelp())
-			return &exitError{0}
+			return "", &exitError{0}
 		case kindVersion:
 			fmt.Fprintln(stdout, p.version())
-			return &exitError{0}
+			return "", &exitError{0}
 		case kindGoVersion:
 			fmt.Fprintln(stdout, p.goVersion())
-			return &exitError{0}
+			return "", &exitError{0}
 		}
 	}
-	return nil
+	return deferred, nil
 }
 
 func optionNames(o *option) string {
@@ -276,8 +287,12 @@ func (p *parser) parse(argv []string, a *args, stdout, stderr io.Writer) error {
 					unrecognized = append(unrecognized, tok)
 					continue
 				}
-				if err := p.consumeOptional(m, a, stdout, stderr); err != nil {
+				deferred, err := p.consumeOptional(m, a, stdout, stderr)
+				if err != nil {
 					return err
+				}
+				if deferred != "" {
+					unrecognized = append(unrecognized, deferred)
 				}
 				continue
 			}
