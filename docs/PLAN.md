@@ -27,13 +27,13 @@ measured against the real upstream tool from day one.
       `go test -race ./...` on linux/macos/windows
 
 ### Phase 1: Test foundation
-- [ ] `internal/synth`: port of `synth_heic.py` (`BuildSyntheticHEIC(Options)`
+- [x] `internal/synth`: port of `synth_heic.py` (`BuildSyntheticHEIC(Options)`
       with layout, include_irot, irot_value, include_exif, exif_orientation,
       exif_position, extra_mdat)
-- [ ] `difftest/` harness: locate `$HEIC_ROTATE_PY_SRC`, run the Python CLI and
-      generator, compare bytes, stdout, stderr, and exit codes. Allow-list for
-      COMPAT cases.
-- [ ] **Gate:** the Go synth output is byte-identical to Python's `synth_heic.py` for
+- [x] `difftest/` harness: locate `$HEIC_ROTATE_PY_SRC`, run the Python CLI and
+      generator, compare bytes, stdout, stderr, and exit codes. (The COMPAT
+      allow-list moved to Phase 3, where the first divergences appear.)
+- [x] **Gate:** the Go synth output is byte-identical to Python's `synth_heic.py` for
       every parameter combination
 
 ### Phase 2: Core port (`core.go`), in `core.py` order
@@ -71,6 +71,7 @@ measured against the real upstream tool from day one.
       (`rotate -G` is a usage error), and `-V` output unchanged
 - [ ] Port `TestCLI` plus group 5's CLI tests (in-process via `cli.Main`, plus a
       few subprocess tests against the built binaries)
+- [ ] Difftest COMPAT allow-list (match cases by COMPAT.md ID)
 - [ ] Difftest: the argv edge-case table vs argparse (exit codes), and the full CLI
       corpus (bytes, stdout, stderr, exit codes)
 - [ ] **Gate:** zero unexplained CLI diffs, and every allowed diff is listed in COMPAT.md

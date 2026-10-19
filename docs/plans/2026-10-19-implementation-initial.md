@@ -1,7 +1,7 @@
 # Plan: Phase 0–1: Scaffolding, synth_heic Port, and Python Differential Harness
 
 - **Date:** 2026-10-19
-- **Status:** Approved
+- **Status:** Implemented 2026-10-19 (gate passed: 195/195 synth cases byte-identical vs Python 3.14.6). The GitHub mirror is still pending (user).
 - **Covers:** [PLAN.md](../PLAN.md) Phase 0 (Scaffolding) and Phase 1 (Test foundation)
 - **Upstream pin:** heic-lossless-rotate v1.7.1, commit `70d6c73b5827aabf958c0649b3ac1c9e0dd33d05`
 
