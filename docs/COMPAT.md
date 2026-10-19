@@ -10,9 +10,9 @@ skips Python-vs-Go comparisons only for cases tagged with one of these
 IDs. An unexplained difference is a bug, either in the port or in this
 page.
 
-> **Status:** D2 and D4–D7 are implemented (Phase 2) and checked by the
-> difftest gate. The remaining entries are specified but not yet implemented;
-> each entry's *Implemented in* field says which phase lands it.
+> **Status:** D1, D2, D4–D7, OSERR, E1, and PYARGS are implemented and
+> checked by the difftest gates (core: Phase 2; CLI: Phase 3). D3 is
+> specified but lands with the Phase 4 file API.
 
 ---
 
@@ -24,7 +24,7 @@ page.
 | **Python** | `rotate`/`reverse` derive the default output path from `input.rsplit('.', 1)[0]` over the **whole path**, so a dot in a directory name, or a leading dot in the file name, counts as the extension. |
 | **Go** | The extension is stripped from the **base name only**, and a base name that *starts* with its only dot (a dot-file) has no extension. `.heic` is always appended, and the `_restored`-suffix stripping in `rotate` works as in Python. |
 | **Same for** | Every ordinary `dir/name.ext` input, which covers almost all real use. |
-| **Implemented in** | Phase 3 (CLI), Phase 4 (`DefaultRotateOutput`/`DefaultReverseOutput`) |
+| **Implemented in** | Phase 3 (CLI). Phase 4 exports it as `DefaultRotateOutput`/`DefaultReverseOutput`. |
 
 | Input | Python `rotate` default | Go `rotate` default |
 |---|---|---|
@@ -106,7 +106,7 @@ about 2.3% of cases are D2.
 | **Python** | File errors print as `error: [Errno 2] No such file or directory: 'x.heic'`, using the platform's `strerror` text. |
 | **Go** | Formats the same way for ENOENT, EACCES, EISDIR, ENOTDIR, EEXIST, ENOSPC, and EROFS. Other errnos fall back to Go's error text in the same `[Errno N] …: '<path>'` shape. |
 | **Same for** | Exit code (10) in every case. The custom `refusing to overwrite existing file …` message is exact. |
-| **Implemented in** | Phase 3 (CLI; formatting helpers in `internal/pyfmt`) |
+| **Implemented in** | Phase 3 (`pyfmt.OSError`, used by the CLI) |
 
 ---
 
@@ -121,6 +121,18 @@ about 2.3% of cases are D2.
 | **Go** | Prints `GoVersionString()` and exits 0. It's a top-level option only, like `-V`, so `rotate -G …` is a usage error. |
 | **Output** | `heic-lossless-rotate (Go port) 1.7.1+go.1` / `implements upstream heic-lossless-rotate 1.7.1` / `built with go1.x.y` |
 | **Unaffected** | `-V`, the TVER provenance entry, and `info` still report only the upstream version (`1.7.1`). |
+| **Implemented in** | Phase 3 |
+
+---
+
+## PYARGS: argparse version
+
+| | |
+|---|---|
+| **ID** | `PYARGS` |
+| **Python** | argparse's behavior varies by version. For example, Python 3.11 rejects `rotate 90 x -q y` (an optional positional after a flag) and `-- rotate 90 x`, both of which 3.14 accepts. |
+| **Go** | Follows **Python 3.14**, including its processing order: positionals are converted as they're consumed, `-h`/`-V` act as soon as they're reached, unknown options are deferred to the end, an unknown character in a combined short-flag group is deferred (`-qz -h` shows help), and only the first `--` is consumed. The CLI difftest runs on 3.14 and skips itself on older interpreters. |
+| **Rotation parsing** | `rotation` is parsed like Python's `int()`: Unicode whitespace, sign, `_` between digits, and any Unicode decimal digit (`'９０'` is 90). Go's Unicode tables are version 15.0, Python 3.14's are 16.0, so digits from scripts added in Unicode 16 (for example Gurung Khema, Kirat Rai, Ol Onal) are accepted by Python but rejected by Go (exit 2). |
 | **Implemented in** | Phase 3 |
 
 ---

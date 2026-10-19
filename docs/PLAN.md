@@ -66,22 +66,26 @@ measured against the real upstream tool from day one.
       [plans/2026-10-19-implementation-phase-2.md](plans/2026-10-19-implementation-phase-2.md).
 
 ### Phase 3: CLI port
-- [ ] `cli/args.go`: the argparse-compatible parser (DESIGN.md § argparse-compatible
+- [x] `cli/args.go`: the argparse-compatible parser (DESIGN.md § argparse-compatible
       CLI parser)
-- [ ] `cli/cli.go`: `buildParser`, `insertImplicitRotate`, `Main`, `run`.
+- [x] `cli/cli.go`: `buildParser`, `insertImplicitRotate`, `Main`, `run`.
       Messages and exit codes are 1:1 with `cli.py`. Default output naming uses
       the D1 rule.
-- [ ] `cmd/heic-rotate`, `cmd/heic-lossless-rotate`
-- [ ] `-G`/`--goversion` (E1). Tests: output format, exit 0, top-level only
+- [x] `cmd/heic-rotate`, `cmd/heic-lossless-rotate`
+- [x] `-G`/`--goversion` (E1). Tests: output format, exit 0, top-level only
       (`rotate -G` is a usage error), and `-V` output unchanged
-- [ ] Port upstream's `test_cli_self_check_aborts_and_writes_nothing_on_failure`
+- [x] Port upstream's `test_cli_self_check_aborts_and_writes_nothing_on_failure`
       (deferred from Phase 2)
-- [ ] Port `TestCLI` plus group 5's CLI tests (in-process via `cli.Main`, plus a
+- [x] Port `TestCLI` plus group 5's CLI tests (in-process via `cli.Main`, plus a
       few subprocess tests against the built binaries)
-- [ ] Difftest COMPAT allow-list (match cases by COMPAT.md ID)
-- [ ] Difftest: the argv edge-case table vs argparse (exit codes), and the full CLI
+- [x] Difftest COMPAT allow-list (match cases by COMPAT.md ID)
+- [x] Difftest: the argv edge-case table vs argparse (exit codes), and the full CLI
       corpus (bytes, stdout, stderr, exit codes)
-- [ ] **Gate:** zero unexplained CLI diffs, and every allowed diff is listed in COMPAT.md
+- [x] **Gate:** zero unexplained CLI diffs, and every allowed diff is listed in COMPAT.md
+- [x] Gate result (2026-10-19): 2,556 CLI cases (184 captured argv, 2,000 generated
+      argv sequences, 360 operational, 10 error, 2 D1), zero unexplained differences
+      (allowed: E1 x2, D2 x2, D1 x2), plus 6 real-subprocess cross-checks. See
+      [plans/2026-10-19-implementation-phase-3.md](plans/2026-10-19-implementation-phase-3.md).
 
 ### Phase 4: File API (`file.go`)
 - [ ] `RotateFile(in, out string, deltaTurns int, opts FileOptions) (Result, error)`,

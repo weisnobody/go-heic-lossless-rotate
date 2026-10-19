@@ -1,7 +1,16 @@
 # Plan: Phase 3 - CLI Port
 
 - **Date:** 2026-10-19
-- **Status:** Approved
+- **Status:** Implemented 2026-10-19. The gate passed (2,556 CLI cases, zero unexplained differences).
+  Deviations from this plan:
+  - The generated argv sweep found that Python 3.12+ defers an unknown character in a
+    combined short-flag group (`-qz -h` shows help), contradicting the plan's
+    "immediate error" assumption. The parser follows the real `consume_optional`, and the
+    captured table grew to 184 cases.
+  - `parsePyInt` strips Unicode White_Space only. A full-Unicode probe showed `int()` doesn't
+    strip `str.isspace()`'s extra `U+001C`-`U+001F`.
+  - New COMPAT entry PYARGS (argparse version, plus Unicode 15-vs-16 digits in `rotation`).
+  - The generated sweep grew from about 400 to 2,000 sequences (about 2 s).
 - **Covers:** [PLAN.md](../PLAN.md) Phase 3 (CLI port), plus the COMPAT allow-list moved from Phase 1 and the CLI self-check test deferred from Phase 2
 - **Upstream pin:** heic-lossless-rotate v1.7.1, commit `70d6c73`
 - **Branch:** `feat/phase-3-cli` (from `dev`)
