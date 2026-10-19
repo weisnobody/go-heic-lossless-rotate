@@ -901,15 +901,23 @@ func FindExifOrientationField(data []byte, metaBodyStart, metaCEnd int) (field E
 	if err != nil || !ok {
 		return field, false, err
 	}
-	blob := pySlice64(data, loc.AbsStart, loc.Length)
+	field, ok = exifFieldInBlob(pySlice64(data, loc.AbsStart, loc.Length), loc.AbsStart)
+	return field, ok, nil
+}
+
+// exifFieldInBlob is FindExifOrientationField's parse of the Exif item's
+// bytes (blob, at file offset absStart): the TIFF header, IFD0, and its
+// Orientation entry. Shared with the streaming engine, which reads the blob
+// through an io.ReaderAt.
+func exifFieldInBlob(blob []byte, absStart uint64) (field ExifOrientationField, ok bool) {
 	if len(blob) < 12 {
-		return field, false, nil
+		return field, false
 	}
 	tiffHeaderOffset := binary.BigEndian.Uint32(blob[0:4])
 	tiffStartInBlob := 4 + int(tiffHeaderOffset)
 	tiff := pySlice(blob, tiffStartInBlob, len(blob))
 	if len(tiff) < 8 || (string(tiff[:2]) != "II" && string(tiff[:2]) != "MM") {
-		return field, false, nil
+		return field, false
 	}
 	var order binary.ByteOrder = binary.BigEndian
 	if string(tiff[:2]) == "II" {
@@ -917,7 +925,7 @@ func FindExifOrientationField(data []byte, metaBodyStart, metaCEnd int) (field E
 	}
 	ifd0Offset := int(order.Uint32(tiff[4:8]))
 	if ifd0Offset+2 > len(tiff) {
-		return field, false, nil
+		return field, false
 	}
 	numEntries := int(order.Uint16(tiff[ifd0Offset : ifd0Offset+2]))
 	pos := ifd0Offset + 2
@@ -927,12 +935,12 @@ func FindExifOrientationField(data []byte, metaBodyStart, metaCEnd int) (field E
 			break
 		}
 		if tag := order.Uint16(entry[0:2]); tag == 0x0112 { // Orientation
-			absValueOffset := int(loc.AbsStart) + tiffStartInBlob + pos + 8
-			return ExifOrientationField{absValueOffset, order, order.Uint16(entry[8:10])}, true, nil
+			absValueOffset := int(absStart) + tiffStartInBlob + pos + 8
+			return ExifOrientationField{absValueOffset, order, order.Uint16(entry[8:10])}, true
 		}
 		pos += 12
 	}
-	return field, false, nil
+	return field, false
 }
 
 // ---------------------------------------------------------------------------
