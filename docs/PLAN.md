@@ -37,28 +37,33 @@ measured against the real upstream tool from day one.
       every parameter combination
 
 ### Phase 2: Core port (`core.go`), in `core.py` order
-- [ ] Errors, constants, `ProvenanceUUID` (plus the UUIDv5 derivation test),
+- [x] Errors, constants, `ProvenanceUUID` (plus the UUIDv5 derivation test),
       `versionTuple`, `VersionString`
-- [ ] `pyfmt.go` helpers, unit-tested against literal Python strings
-- [ ] Box primitives: `ReadBoxHeader`, `IterBoxes` (lazy), `FindChild`,
+- [x] `pyfmt.go` helpers, unit-tested against literal Python strings
+- [x] Box primitives: `ReadBoxHeader`, `IterBoxes` (lazy), `FindChild`,
       `FindUniqueChild`
-- [ ] `ParsePitm`, `ParseIpma`/`BuildIpma`, `ParseIpcoChildren`
-- [ ] `ParseIloc`/`BuildIlocContent`/`PatchIlocOffsetsAtThreshold`
-- [ ] `ParseIinfItems`, Exif orientation maps, `FindExifItemLocation`,
+- [x] `ParsePitm`, `ParseIpma`/`BuildIpma`, `ParseIpcoChildren`
+- [x] `ParseIloc`/`BuildIlocContent`/`PatchIlocOffsetsAtThreshold`
+- [x] `ParseIinfItems`, Exif orientation maps, `FindExifItemLocation`,
       `FindExifOrientationField`
-- [ ] Provenance: `Crc32ExcludingRange`, `FindProvenanceBox`,
+- [x] Provenance: `Crc32ExcludingRange`, `FindProvenanceBox`,
       `ParseProvenance`(+`Lenient`), `BuildProvenanceBox`, `LocateStructures`,
       the rotation helpers
-- [ ] `ApplyRotation` (fast path, slow path, Exif sync, provenance
+- [x] `ApplyRotation` (fast path, slow path, Exif sync, provenance
       create/update/v1→v2 migrate/resize)
-- [ ] `restoreMetaProvenanceSpan`, `prepareReversal`,
+- [x] `restoreMetaProvenanceSpan`, `prepareReversal`,
       `iterReconstructedChunks`, `ReverseRotation`, `VerifyReversible`
-- [ ] `GatherInfo`, `FormatInfo`, `VerifyStructure`
-- [ ] Bounds-check audit for D2/D4/D5: every Python crash path returns a typed error
-- [ ] Port the test groups 1, 2, and 6 listed below
-- [ ] **Gate:** the library-level difftest (Go `ApplyRotation`/`ReverseRotation` vs
+- [x] `GatherInfo`, `FormatInfo`, `VerifyStructure`
+- [x] Bounds-check audit for D2/D4/D5: every Python crash path returns a typed error
+- [x] Port the test groups 1, 2, and 6 listed below (plus the core-only
+      group 4 and 5 tests; group 2's CLI self-check method moves to Phase 3)
+- [x] **Gate:** the library-level difftest (Go `ApplyRotation`/`ReverseRotation` vs
       Python `apply_rotation`/`reverse_rotation`, via a small Python driver)
       shows zero diffs, including verbose log text
+- [x] Gate result (2026-10-19): 103,396 cases over 18,043 inputs, zero
+      unexplained differences (allowed: D2 x2037, D5 x16, D6 x15); 794
+      formatting cases vs the live interpreter. See
+      [plans/2026-10-19-implementation-phase-2.md](plans/2026-10-19-implementation-phase-2.md).
 
 ### Phase 3: CLI port
 - [ ] `cli/args.go`: the argparse-compatible parser (DESIGN.md § argparse-compatible
@@ -69,6 +74,8 @@ measured against the real upstream tool from day one.
 - [ ] `cmd/heic-rotate`, `cmd/heic-lossless-rotate`
 - [ ] `-G`/`--goversion` (E1). Tests: output format, exit 0, top-level only
       (`rotate -G` is a usage error), and `-V` output unchanged
+- [ ] Port upstream's `test_cli_self_check_aborts_and_writes_nothing_on_failure`
+      (deferred from Phase 2)
 - [ ] Port `TestCLI` plus group 5's CLI tests (in-process via `cli.Main`, plus a
       few subprocess tests against the built binaries)
 - [ ] Difftest COMPAT allow-list (match cases by COMPAT.md ID)

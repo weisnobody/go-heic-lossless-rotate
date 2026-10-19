@@ -1,7 +1,15 @@
 # Plan: Phase 2: core.go Port and Python-Formatting Helpers
 
 - **Date:** 2026-10-19
-- **Status:** Approved
+- **Status:** Implemented 2026-10-19. The gate passed: 103,396 cases, zero unexplained
+  differences. Deviations from this plan:
+  - Commits 3 and 4 were swapped (the errors come before pybytes, which uses them).
+  - D7's cap is absolute (2^20 zero-width extents) rather than `len(data)`. The gate
+    found a 65535-extent file that Python parses and then rejects with its own typed
+    error.
+  - D5/D7 refusals are deferred until after Python's own parse would succeed. The
+    interim corruption sweep found early refusals displacing Python's
+    `iloc parse mismatch`.
 - **Covers:** [PLAN.md](../PLAN.md) Phase 2 (Core port), plus the core-only tests from upstream test groups 4 and 5
 - **Upstream pin:** heic-lossless-rotate v1.7.1, commit `70d6c73`
 - **Branch:** `feat/phase-2-core` (from `dev`)
