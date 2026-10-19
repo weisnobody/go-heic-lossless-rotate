@@ -443,7 +443,7 @@ func ParseIloc(data []byte, cStart, cEnd int) (*Iloc, error) {
 	if err != nil {
 		return nil, err
 	}
-	flags, _ := intFromBytes(data, cStart+1, 3)
+	flags, _ := intFromBytes(data, cStart+1, 3) // 3 bytes always fit
 	pos := cStart + 4
 	b, err := pyIndex(data, pos)
 	if err != nil {
@@ -484,25 +484,34 @@ func ParseIloc(data []byte, cStart, cEnd int) (*Iloc, error) {
 		}
 		return readU32()
 	}
-	readInt := func(n int) (uint64, error) {
+	// Values wider than 64 bits (which Python reads as big ints) and
+	// runaway zero-width extent counts are Go-only refusals (docs/COMPAT.md
+	// D5, D7). Both are deferred until after the mismatch check below, so
+	// they only ever fire where Python's own parse would have succeeded -
+	// never in place of Python's own error.
+	tooWide := false
+	readInt := func(n int) uint64 {
 		if n == 0 {
-			return 0, nil
+			return 0
 		}
-		v, err := intFromBytes(data, pos, n)
+		v, ok := intFromBytes(data, pos, n)
+		tooWide = tooWide || !ok
 		pos += n
-		return v, err
+		return v
 	}
 
 	itemCount, err := readID()
 	if err != nil {
 		return nil, err
 	}
-	// Counts come from the file: grow as bytes are consumed instead of
-	// preallocating. Zero-width fields consume no bytes at all, so cap the
-	// total number of extents: real extents can't outnumber the file's
-	// bytes, but crafted counts could otherwise build billions
-	// (docs/COMPAT.md D7).
-	totalExtents := 0
+	// Counts come from the file, so grow as bytes are consumed instead of
+	// preallocating. Once pos runs past cEnd the parse can only end in an
+	// error (pos never moves backward, and the final check requires
+	// pos == cEnd), so the remaining extents are skipped arithmetically -
+	// Python reads them as zeros from past the end of the data - giving the
+	// exact "consumed" count without storing them.
+	extentWidth := iloc.IndexSize + iloc.OffsetSize + iloc.LengthSize
+	zeroWidthExtents := 0
 	for range itemCount {
 		var it IlocItem
 		if it.ItemID, err = readID(); err != nil {
@@ -519,39 +528,44 @@ func ParseIloc(data []byte, cStart, cEnd int) (*Iloc, error) {
 		if it.DataRefIndex, err = readU16(); err != nil {
 			return nil, err
 		}
-		if it.BaseOffset, err = readInt(iloc.BaseOffsetSize); err != nil {
-			return nil, err
-		}
+		it.BaseOffset = readInt(iloc.BaseOffsetSize)
 		extentCount, err := readU16()
 		if err != nil {
 			return nil, err
 		}
-		totalExtents += int(extentCount)
-		if totalExtents > len(data) {
-			return nil, boxParseErrorf("iloc declares more extents (%d so far) than the data has bytes (%d)",
-				totalExtents, len(data))
-		}
-		for range extentCount {
+		for j := range int(extentCount) {
+			if pos > cEnd {
+				pos += (int(extentCount) - j) * extentWidth
+				break
+			}
+			if extentWidth == 0 {
+				// Zero-byte extents never advance pos, so nothing bounds
+				// how many a crafted file can declare.
+				if zeroWidthExtents++; zeroWidthExtents > len(data) {
+					zeroWidthExtents += int(extentCount) - j - 1 // count the rest; store none
+					break
+				}
+			}
 			var ext IlocExtent
 			if iloc.IndexSize != 0 {
-				idx, err := readInt(iloc.IndexSize)
-				if err != nil {
-					return nil, err
-				}
+				idx := readInt(iloc.IndexSize)
 				ext.Index = &idx
 			}
-			if ext.Offset, err = readInt(iloc.OffsetSize); err != nil {
-				return nil, err
-			}
-			if ext.Length, err = readInt(iloc.LengthSize); err != nil {
-				return nil, err
-			}
+			ext.Offset = readInt(iloc.OffsetSize)
+			ext.Length = readInt(iloc.LengthSize)
 			it.Extents = append(it.Extents, ext)
 		}
 		iloc.Items = append(iloc.Items, it)
 	}
 	if pos != cEnd {
 		return nil, boxParseErrorf("iloc parse mismatch: consumed %d, expected %d", pos-cStart, cEnd-cStart)
+	}
+	if tooWide {
+		return nil, boxParseErrorf("iloc has a field value that doesn't fit in 64 bits")
+	}
+	if zeroWidthExtents > len(data) {
+		return nil, boxParseErrorf("iloc declares %d zero-width extents, more than the data has bytes (%d)",
+			zeroWidthExtents, len(data))
 	}
 	return iloc, nil
 }
@@ -1663,6 +1677,422 @@ func ApplyRotation(data []byte, deltaTurns int, opts RotateOptions) ([]byte, err
 // flagsBytes mirrors struct.pack('>I', flags)[1:]: the low 3 bytes.
 func flagsBytes(flags uint32) []byte {
 	return []byte{byte(flags >> 16), byte(flags >> 8), byte(flags)}
+}
+
+// ---------------------------------------------------------------------------
+// Reverse logic
+// ---------------------------------------------------------------------------
+
+// ReverseOptions are ReverseRotation's and VerifyReversible's options. As
+// with RotateOptions, a nil Log is silent.
+type ReverseOptions struct {
+	// IgnoreTamper proceeds even if the file appears to have been modified
+	// by something else since this tool's last edit (CCRC mismatch). The
+	// final reconstruction CRC check is never skipped.
+	IgnoreTamper bool
+	Log          io.Writer // receives the verbose diagnostic lines; nil = silent
+}
+
+// requireEntry mirrors entries[tag]: a missing entry is a Python KeyError,
+// here a *ProvenanceError (COMPAT D2).
+func requireEntry(entries ProvenanceEntries, tag string) ([]byte, error) {
+	v, ok := entries[tag]
+	if !ok {
+		return nil, provenanceErrorf("provenance record has no '%s' entry", tag)
+	}
+	return v, nil
+}
+
+// entryU32 mirrors struct.unpack('>I', entries[tag])[0]: a missing or
+// wrong-length entry is a Python KeyError/struct.error (COMPAT D2).
+func entryU32(entries ProvenanceEntries, tag string) (uint32, error) {
+	v, err := requireEntry(entries, tag)
+	if err != nil {
+		return 0, err
+	}
+	if len(v) != 4 {
+		return 0, provenanceErrorf("provenance entry '%s' is %d bytes, expected 4", tag, len(v))
+	}
+	return binary.BigEndian.Uint32(v), nil
+}
+
+// restoreMetaProvenanceSpan restores 'meta' to its pristine pre-rotation
+// state (iprp/ipma, meta's own size field, iloc content) and removes the
+// provenance box, given span = data[meta_start:prov_end] - a standalone
+// buffer whose two top-level boxes are the file's 'meta' immediately
+// followed by the provenance box (← _restore_meta_provenance_span).
+// Returns the restored span.
+//
+// This is ReverseRotation's restoration logic, factored out so it has
+// exactly one implementation shared by ReverseRotation and
+// VerifyReversible. Box parsing is header-driven, not position-driven, so
+// operating on this standalone slice needs no special-casing.
+func restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logger) ([]byte, error) {
+	info, err := LocateStructures(span)
+	if err != nil {
+		return nil, err
+	}
+	iprpHdr := info.IprpHdr
+	iprpStart, iprpCEnd := iprpHdr.Start, iprpHdr.ContentEnd
+	primaryItemID := info.PrimaryItemID
+
+	// Restore iprp. Two formats, branched on which entry is present:
+	//   v1 (OPRP): the pristine 'iprp' box was saved in full - a single splice.
+	//   v2 (OIRT): only the 'irot' property itself was saved. FAST PATH
+	//     (OIRT length 1) just needs that one byte put back. SLOW PATH
+	//     (OIRT length 0) removes the inserted property - always the LAST
+	//     ipco child, with its association always the LAST entry in the
+	//     primary item's ipma list - so no index bookkeeping was needed.
+	if pristineIprp, ok := entries["OPRP"]; ok {
+		span = splice(span, iprpStart, iprpCEnd, pristineIprp)
+		log.printf("[reverse] restored pristine 'iprp' from full v1 "+
+			"snapshot (%d bytes)", len(pristineIprp))
+	} else if oirt, ok := entries["OIRT"]; ok {
+		ipcoHdr, ipmaHdr, ok, err := iprpParts(span, iprpHdr.ContentStart, iprpHdr.ContentEnd)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, provenanceErrorf("'iprp' is missing 'ipco' or 'ipma' - " +
+				"cannot reverse")
+		}
+		ipcoChildren, err := ParseIpcoChildren(span, ipcoHdr.ContentStart, ipcoHdr.ContentEnd)
+		if err != nil {
+			return nil, err
+		}
+		ipmaVersion, _, ipmaEntries, err := ParseIpma(span, ipmaHdr.ContentStart, ipmaHdr.ContentEnd)
+		if err != nil {
+			return nil, err
+		}
+		primary, hasPrimary := primaryEntry(ipmaEntries, primaryItemID)
+
+		switch len(oirt) {
+		case 1:
+			// FAST PATH: 'irot' already existed - put its original byte back.
+			if !hasPrimary {
+				return nil, provenanceErrorf("OIRT indicates the primary item should have an " +
+					"'irot' property, but it now has no 'ipma' entry " +
+					"at all - cannot reverse")
+			}
+			child, ok := findIrotChild(primary, ipcoChildren)
+			if !ok {
+				return nil, provenanceErrorf("OIRT indicates an 'irot' property should exist on " +
+					"the primary item, but none was found - cannot " +
+					"reverse")
+			}
+			irotPos := child.ContentStart
+			if irotPos >= len(span) { // Python: IndexError (COMPAT D2)
+				return nil, errIndex(irotPos, len(span))
+			}
+			span[irotPos] = oirt[0]
+			log.printf("[reverse] restored original 'irot' byte "+
+				"(%d) at offset %d", oirt[0], irotPos)
+		case 0:
+			// SLOW PATH: no 'irot' existed originally - strip out exactly
+			// the one heic-lossless-rotate inserted.
+			if len(ipcoChildren) == 0 || !ipcoChildren[len(ipcoChildren)-1].Is("irot") {
+				return nil, provenanceErrorf("OIRT indicates heic-lossless-rotate appended an 'irot' " +
+					"property as the last 'ipco' child, but that's not " +
+					"what's there now - cannot safely reverse (file may " +
+					"have been modified by something else since)")
+			}
+			lastChild := ipcoChildren[len(ipcoChildren)-1]
+			newPropertyIndex := len(ipcoChildren) // 1-based index of lastChild
+			if !hasPrimary || len(primary.Assocs) == 0 ||
+				primary.Assocs[len(primary.Assocs)-1].PropIndex != newPropertyIndex {
+				return nil, provenanceErrorf("OIRT indicates the primary item's last 'ipma' " +
+					"association should point at the inserted 'irot' " +
+					"property, but it doesn't - cannot safely reverse")
+			}
+
+			newEntries := make([]IpmaEntry, len(ipmaEntries))
+			for i, e := range ipmaEntries {
+				assocs := append([]IpmaAssoc(nil), e.Assocs...)
+				if e.ItemID == primaryItemID {
+					if len(assocs) == 0 { // Python: pop from empty list (COMPAT D2)
+						return nil, boxParseErrorf("ipma has an entry for primary item %d with no associations to remove", e.ItemID)
+					}
+					assocs = assocs[:len(assocs)-1] // drop the association we appended
+				}
+				newEntries[i] = IpmaEntry{ItemID: e.ItemID, Assocs: assocs}
+			}
+			oipf, err := requireEntry(entries, "OIPF")
+			if err != nil {
+				return nil, err
+			}
+			if len(oipf) != 3 { // Python: struct.error (COMPAT D2)
+				return nil, provenanceErrorf("provenance entry 'OIPF' is %d bytes, expected 3", len(oipf))
+			}
+			originalFlags := uint32(oipf[0])<<16 | uint32(oipf[1])<<8 | uint32(oipf[2])
+			newIpmaBox, err := BuildIpma(ipmaVersion, originalFlags, newEntries)
+			if err != nil {
+				return nil, err
+			}
+
+			newIpcoBox := makeBox("ipco", pySliceCopy(span, ipcoHdr.ContentStart, lastChild.Start))
+			var newIprpContent []byte
+			if ipcoHdr.Start < ipmaHdr.Start { // first_is_ipco
+				newIprpContent = append(newIpcoBox, newIpmaBox...)
+			} else {
+				newIprpContent = append(newIpmaBox, newIpcoBox...)
+			}
+			newIprpBox := makeBox("iprp", newIprpContent)
+			span = splice(span, iprpStart, iprpCEnd, newIprpBox)
+			log.printf("[reverse] removed inserted 'irot' property and "+
+				"its 'ipma' association, restored original 'ipma' "+
+				"flags (%d byte 'iprp' now, was %d)", len(newIprpBox), iprpCEnd-iprpStart)
+		default:
+			return nil, provenanceErrorf("corrupt provenance record: OIRT has unexpected length "+
+				"%d (expected 0 or 1)", len(oirt))
+		}
+	} else {
+		return nil, provenanceErrorf("provenance record has neither 'OPRP' nor 'OIRT' - don't " +
+			"know how to restore 'iprp'")
+	}
+
+	// Restore meta's size field. This overwrites a plain 4-byte field in
+	// place; any file reaching this point was edited by ApplyRotation,
+	// which refuses 64-bit/extends-to-EOF 'meta' headers.
+	omsz, err := requireEntry(entries, "OMSZ")
+	if err != nil {
+		return nil, err
+	}
+	metaStartLocal := info.MetaHdr.Start
+	span = splice(span, metaStartLocal, metaStartLocal+4, omsz)
+
+	// Remove the provenance box itself NOW, before restoring iloc - which
+	// needs 'meta''s own byte range in its FINAL (post-shrink) state.
+	info3, err := LocateStructures(span)
+	if err != nil {
+		return nil, err
+	}
+	if info3.ProvenanceHdr == nil { // Python: unpacking None (TypeError, COMPAT D2)
+		return nil, provenanceErrorf("provenance box no longer found after restoring 'meta' - cannot reverse")
+	}
+	span = splice(span, info3.ProvenanceHdr.Start, info3.ProvenanceHdr.ContentEnd, nil)
+
+	// Restore iloc content, if we have a saved snapshot.
+	if oilc, ok := entries["OILC"]; ok {
+		info4, err := LocateStructures(span)
+		if err != nil {
+			return nil, err
+		}
+		if info4.IlocHdr != nil {
+			span = splice(span, info4.IlocHdr.ContentStart, info4.IlocHdr.ContentEnd, oilc)
+		}
+	}
+	return span, nil
+}
+
+// exifPatch is the (absolute offset, pristine bytes) Exif restoration.
+type exifPatch struct {
+	offset int
+	bytes  []byte
+}
+
+// reversal is everything prepareReversal works out before the reconstructed
+// bytes are assembled.
+type reversal struct {
+	entries   ProvenanceEntries
+	metaStart int
+	provEnd   int
+	span      []byte
+	exif      *exifPatch
+}
+
+// prepareReversal does all of the setup shared by ReverseRotation and
+// VerifyReversible: locate the provenance record, check its format version,
+// run the tamper check, restore the meta+provenance span, and determine the
+// embedded-Exif patch (← _prepare_reversal). Having this in exactly one
+// place means the two can't drift apart on what counts as a
+// valid/tampered/malformed record.
+func prepareReversal(data []byte, ignoreTamper bool, log logger) (*reversal, error) {
+	info, err := LocateStructures(data)
+	if err != nil {
+		return nil, err
+	}
+	provHdr := info.ProvenanceHdr
+	if provHdr == nil {
+		return nil, provenanceErrorf("no heic-lossless-rotate provenance record found in this file - " +
+			"either it was never edited by this tool, or the record was " +
+			"stripped by something else. Cannot reverse.")
+	}
+
+	version, entries, err := ParseProvenance(data, *provHdr)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(SupportedReverseFormatVersions, int(version)) {
+		supported := make([]string, len(SupportedReverseFormatVersions))
+		for i, v := range SupportedReverseFormatVersions {
+			supported[i] = strconv.Itoa(v)
+		}
+		return nil, provenanceErrorf("provenance record is format version %d; this script "+
+			"only knows how to reverse version(s) %s. Use a "+
+			"matching version of heic-lossless-rotate.", version, strings.Join(supported, ", "))
+	}
+
+	provStart, provEnd := provHdr.Start, provHdr.ContentEnd
+	currentCcrc := Crc32ExcludingRange(data, provStart, provEnd)
+	storedCcrc, err := entryU32(entries, "CCRC")
+	if err != nil {
+		return nil, err
+	}
+	if currentCcrc != storedCcrc {
+		msg := fmt.Sprintf("file appears to have been modified by something else since "+
+			"the last heic-lossless-rotate edit (CRC32 mismatch: file is "+
+			"%s, provenance expects %s). "+
+			"Reversing now could silently clobber those other changes.",
+			pyfmt.Hex08(currentCcrc), pyfmt.Hex08(storedCcrc))
+		if !ignoreTamper {
+			return nil, &ProvenanceError{Msg: msg + " Re-run with --ignore-tamper-check to override."}
+		}
+		log.printf("[warning] %s Proceeding anyway (--ignore-tamper-check).", msg)
+	}
+
+	// 'mdat' is excluded from this span in both supported layouts, since
+	// the provenance box is always inserted as 'meta''s immediate next
+	// sibling; it is never touched by the restoration itself, only
+	// (optionally) by the Exif-Orientation patch below.
+	metaStart := info.MetaHdr.Start
+	span, err := restoreMetaProvenanceSpan(pySliceCopy(data, metaStart, provEnd), entries, log)
+	if err != nil {
+		return nil, err
+	}
+
+	// The Exif patch, if any, lands inside 'mdat' - read its CURRENT
+	// position and value directly off data. Reversing never moves mdat's
+	// own bytes, only removes/shrinks the meta+provenance span.
+	r := &reversal{entries: entries, metaStart: metaStart, provEnd: provEnd, span: span}
+	if oexo, ok := entries["OEXO"]; ok {
+		field, ok, err := FindExifOrientationField(data, info.MetaBodyStart, info.MetaHdr.ContentEnd)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			if metaStart <= field.AbsOffset && field.AbsOffset < provEnd {
+				// Should be structurally impossible for any file this tool
+				// itself produced - fail loudly rather than guess.
+				return nil, provenanceErrorf("internal error: embedded Exif Orientation field " +
+					"unexpectedly falls inside the meta/provenance span " +
+					"- refusing to guess at the reconstructed bytes")
+			}
+			r.exif = &exifPatch{field.AbsOffset, oexo}
+			log.printf("[reverse] restoring pristine legacy Exif Orientation tag")
+		} else {
+			log.printf("[reverse] warning: had a saved Exif Orientation snapshot " +
+				"but couldn't relocate the field to restore it - the " +
+				"final CRC check below will catch any resulting mismatch")
+		}
+	}
+	return r, nil
+}
+
+// iterReconstructedChunks yields the reconstructed file's bytes, in file
+// order, as a handful of chunks: sub-slices of data for everything passed
+// through unchanged, real bytes only for the restored meta+provenance span
+// and (if applicable) the Exif patch (← _iter_reconstructed_chunks). This is
+// the SINGLE piece of code that decides what bytes the reconstructed file
+// consists of - ReverseRotation concatenates the chunks, VerifyReversible
+// only feeds them into a running CRC32.
+func iterReconstructedChunks(data []byte, r *reversal) iter.Seq[[]byte] {
+	return func(yield func([]byte) bool) {
+		if r.exif != nil && r.exif.offset < r.metaStart {
+			if !yield(pySlice(data, 0, r.exif.offset)) || !yield(r.exif.bytes) ||
+				!yield(pySlice(data, r.exif.offset+2, r.metaStart)) {
+				return
+			}
+		} else if !yield(pySlice(data, 0, r.metaStart)) {
+			return
+		}
+
+		if !yield(r.span) {
+			return
+		}
+
+		if r.exif != nil && r.exif.offset >= r.provEnd {
+			if yield(pySlice(data, r.provEnd, r.exif.offset)) && yield(r.exif.bytes) {
+				yield(pySlice(data, r.exif.offset+2, len(data)))
+			}
+		} else {
+			yield(pySlice(data, r.provEnd, len(data)))
+		}
+	}
+}
+
+// reconstructedChunks is the indirection both ReverseRotation and
+// VerifyReversible call through, so tests can confirm they consume the
+// identical chunk sequence (upstream monkeypatches the same function).
+var reconstructedChunks = iterReconstructedChunks
+
+// checkReconstructedCrc compares the reconstructed file's CRC32 with the
+// pristine-original CRC32 recorded on the very first edit.
+func checkReconstructedCrc(r *reversal, finalCrc uint32, log logger) error {
+	expected, err := entryU32(r.entries, "PCRC")
+	if err != nil {
+		return err
+	}
+	if finalCrc != expected {
+		return provenanceErrorf("reconstruction mismatch: rebuilt file CRC32 %s "+
+			"does not match recorded original CRC32 %s. "+
+			"Do not trust this output - this indicates a bug or an "+
+			"inconsistent provenance record.", pyfmt.Hex08(finalCrc), pyfmt.Hex08(expected))
+	}
+	log.printf("[ok] reconstructed file CRC32 matches the recorded original "+
+		"(%s) - byte-identical to the true original", pyfmt.Hex08(finalCrc))
+	return nil
+}
+
+// ReverseRotation undoes heic-lossless-rotate's own edit(s), reconstructing
+// the exact original file, verified by CRC32 against the PCRC recorded on
+// the file's first-ever edit (← reverse_rotation).
+//
+// Every edit ApplyRotation makes falls either inside the contiguous span
+// [meta_start, prov_end) - 'meta' itself plus the provenance box that
+// immediately follows it - or, for at most one 2-byte patch, inside 'mdat'
+// (the embedded legacy Exif Orientation tag). Nothing outside those two
+// regions is ever touched. The input is never modified.
+func ReverseRotation(data []byte, opts ReverseOptions) ([]byte, error) {
+	log := logger{opts.Log}
+	r, err := prepareReversal(data, opts.IgnoreTamper, log)
+	if err != nil {
+		return nil, err
+	}
+	size := 0
+	for chunk := range reconstructedChunks(data, r) {
+		size += len(chunk)
+	}
+	out := make([]byte, 0, size)
+	var crc uint32
+	for chunk := range reconstructedChunks(data, r) {
+		out = append(out, chunk...)
+		crc = crc32.Update(crc, crc32.IEEETable, chunk)
+	}
+	if err := checkReconstructedCrc(r, crc, log); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// VerifyReversible is equivalent, in pass/fail and the error returned, to
+// calling ReverseRotation and discarding the result - but it computes the
+// final CRC32 comparison without ever materializing a second full-file
+// buffer (← verify_reversible). Used by rotate's post-edit self-check.
+//
+// It isn't a second implementation that happens to agree with
+// ReverseRotation: both call prepareReversal and iterReconstructedChunks;
+// the only difference is what happens to each chunk.
+func VerifyReversible(data []byte, opts ReverseOptions) error {
+	log := logger{opts.Log}
+	r, err := prepareReversal(data, opts.IgnoreTamper, log)
+	if err != nil {
+		return err
+	}
+	var crc uint32
+	for chunk := range reconstructedChunks(data, r) {
+		crc = crc32.Update(crc, crc32.IEEETable, chunk)
+	}
+	return checkReconstructedCrc(r, crc, log)
 }
 
 // @@SECTIONS@@

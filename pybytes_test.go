@@ -78,20 +78,20 @@ func TestIntFromBytes(t *testing.T) {
 		{0, 5, 0x1234ff},
 	}
 	for _, tt := range tests {
-		got, err := intFromBytes(data, tt.pos, tt.n)
-		if err != nil || got != tt.want {
-			t.Errorf("intFromBytes(%d, %d) = %#x, %v; want %#x", tt.pos, tt.n, got, err, tt.want)
+		got, ok := intFromBytes(data, tt.pos, tt.n)
+		if !ok || got != tt.want {
+			t.Errorf("intFromBytes(%d, %d) = %#x, %v; want %#x", tt.pos, tt.n, got, ok, tt.want)
 		}
 	}
 	// Widths over 8 bytes are accepted when the value fits (COMPAT D5)...
 	wide := append(make([]byte, 7), 0x01, 0, 0, 0, 0, 0, 0, 0x02) // 15 bytes
-	if got, err := intFromBytes(wide, 0, 15); err != nil || got != 0x0100000000000002 {
-		t.Errorf("15-byte field = %#x, %v", got, err)
+	if got, ok := intFromBytes(wide, 0, 15); !ok || got != 0x0100000000000002 {
+		t.Errorf("15-byte field = %#x, %v", got, ok)
 	}
 	// ...and refused only when the value itself exceeds 64 bits.
 	tooBig := append([]byte{0x01}, make([]byte, 8)...) // 2^64
-	if _, err := intFromBytes(tooBig, 0, 9); err == nil {
-		t.Error("2^64: want error")
+	if _, ok := intFromBytes(tooBig, 0, 9); ok {
+		t.Error("2^64: want !ok")
 	}
 }
 

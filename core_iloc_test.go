@@ -72,13 +72,29 @@ func TestParseIlocWideFields(t *testing.T) {
 
 func TestParseIlocExtentCap(t *testing.T) {
 	// COMPAT D7: zero-width fields + huge counts must not build billions of
-	// extents. v1, all widths 0, 65535 items each claiming 65535 extents.
-	content := []byte{1, 0, 0, 0, 0x00, 0x00, 0xff, 0xff}
+	// extents. v1, all widths 0, 4 items each claiming 65535 extents.
+	content := []byte{1, 0, 0, 0, 0x00, 0x00, 0, 4}
 	for range 4 {
 		content = append(content, 0, 1, 0, 0, 0, 0, 0xff, 0xff) // id, constr, dri, extent_count
 	}
 	_, err := ParseIloc(content, 0, len(content))
-	wantBoxParseError(t, err, "iloc declares more extents (65535 so far) than the data has bytes (40)")
+	wantBoxParseError(t, err, "iloc declares 262140 zero-width extents, more than the data has bytes (40)")
+
+	// The refusal is deferred: where Python's own parse fails, its error wins.
+	_, err = ParseIloc(content, 0, len(content)-1)
+	wantBoxParseError(t, err, "iloc parse mismatch: consumed 40, expected 39")
+}
+
+func TestParseIlocOverrunMatchesPython(t *testing.T) {
+	// A width nibble corrupted to 15 bytes makes Python read zeros far past
+	// the end of the data before its mismatch check fails; Go must report
+	// the identical consumed count instead of refusing the wide field early.
+	// v1, offset_size=15, length_size=4: 1 item with 3 extents (19 bytes
+	// each) in a 30-byte box.
+	content := []byte{1, 0, 0, 0, 0xf4, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 3}
+	content = append(content, make([]byte, 14)...)
+	_, err := ParseIloc(content, 0, len(content))
+	wantBoxParseError(t, err, "iloc parse mismatch: consumed 73, expected 30")
 }
 
 // ilocContent builds v1 iloc content with one item and one extent.

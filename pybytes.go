@@ -59,19 +59,17 @@ func pySliceCopy(data []byte, lo, hi int) []byte {
 
 // intFromBytes mirrors int.from_bytes(data[pos:pos+n], 'big'): the slice
 // clamps, so a read past the end silently yields a shorter value. Python's
-// result is arbitrary-precision; a value that doesn't fit in 64 bits is a
-// *BoxParseError (docs/COMPAT.md D5). Widths over 8 bytes are fine as long
-// as the leading bytes are zero.
-func intFromBytes(data []byte, pos, n int) (uint64, error) {
-	b := pySlice(data, pos, pos+n)
-	var v uint64
-	for _, c := range b {
+// result is arbitrary-precision; ok is false if the value doesn't fit in 64
+// bits (callers decide when that matters - see docs/COMPAT.md D5). Widths
+// over 8 bytes are fine as long as the leading bytes are zero.
+func intFromBytes(data []byte, pos, n int) (v uint64, ok bool) {
+	for _, c := range pySlice(data, pos, pos+n) {
 		if v>>56 != 0 {
-			return 0, boxParseErrorf("integer field at offset %d (%d bytes) doesn't fit in 64 bits", pos, len(b))
+			return 0, false
 		}
 		v = v<<8 | uint64(c)
 	}
-	return v, nil
+	return v, true
 }
 
 // unpackU16 mirrors struct.unpack_from('>H', data, pos)[0].
