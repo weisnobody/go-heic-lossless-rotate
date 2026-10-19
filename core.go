@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"iter"
+	"math"
 	"math/big"
 	"math/bits"
 	"strconv"
@@ -725,6 +726,187 @@ func shiftIlocOffset(off uint64, delta, n int) (uint64, error) {
 		return 0, errIlocFieldOverflow(strconv.FormatUint(sum, 10), n)
 	}
 	return sum, nil
+}
+
+// ---------------------------------------------------------------------------
+// iinf - find an item of a given type (used to locate the 'Exif' item, if any)
+// ---------------------------------------------------------------------------
+
+// IinfItem is one (item_id, item_type) pair. ItemType is normally 4 bytes,
+// but - as in Python, which slices it - may be shorter in a truncated box.
+type IinfItem struct {
+	ItemID   uint32
+	ItemType string
+}
+
+// ParseIinfItems returns the (item_id, item_type) of every version 2+ 'infe'
+// entry in iinf (← parse_iinf_items).
+func ParseIinfItems(data []byte, cStart, cEnd int) ([]IinfItem, error) {
+	version, err := pyIndex(data, cStart)
+	if err != nil {
+		return nil, err
+	}
+	pos := cStart + 4
+	if version == 0 {
+		pos += 2
+	} else {
+		pos += 4
+	}
+	var items []IinfItem
+	for hdr, err := range IterBoxes(data, pos, cEnd) {
+		if err != nil {
+			return nil, err
+		}
+		if !hdr.Is("infe") {
+			continue
+		}
+		cs := hdr.ContentStart
+		v, err := pyIndex(data, cs)
+		if err != nil {
+			return nil, err
+		}
+		if v < 2 {
+			continue
+		}
+		var it IinfItem
+		if v == 2 {
+			id, err := unpackU16(data, cs+4)
+			if err != nil {
+				return nil, err
+			}
+			it = IinfItem{uint32(id), string(pySlice(data, cs+8, cs+12))}
+		} else {
+			id, err := unpackU32(data, cs+4)
+			if err != nil {
+				return nil, err
+			}
+			it = IinfItem{id, string(pySlice(data, cs+10, cs+14))}
+		}
+		items = append(items, it)
+	}
+	return items, nil
+}
+
+// ---------------------------------------------------------------------------
+// Legacy embedded Exif 'Orientation' tag: locate the 2-byte value field
+// ---------------------------------------------------------------------------
+
+// IrotToExifOrientation maps HEIF irot (anticlockwise quarter turns needed
+// for display) to the legacy TIFF/Exif Orientation code (values that use no
+// mirroring: 1/3/6/8):
+//
+//	irot=0 (0 deg)                          -> Exif 1 (Horizontal / normal)
+//	irot=1 (90 deg CCW)                     -> Exif 8 (Rotate 270 CW == 90 CCW)
+//	irot=2 (180 deg)                        -> Exif 3 (Rotate 180)
+//	irot=3 (270 deg CCW == needs 90 deg CW) -> Exif 6 (Rotate 90 CW)
+var IrotToExifOrientation = [4]uint16{1, 8, 3, 6}
+
+// ExifOrientationToIrot is the inverse of IrotToExifOrientation.
+var ExifOrientationToIrot = map[uint16]int{1: 0, 8: 1, 3: 2, 6: 3}
+
+// ExifItemLocation is find_exif_item_location's (item_id, absolute_data_start,
+// length). AbsStart and Length come straight from iloc and may point past
+// the end of the data.
+type ExifItemLocation struct {
+	ItemID           uint32
+	AbsStart, Length uint64
+}
+
+// FindExifItemLocation returns where the first 'Exif'-typed item's data
+// lives, or ok=false if there isn't one stored at an absolute file offset
+// (← find_exif_item_location).
+func FindExifItemLocation(data []byte, metaBodyStart, metaCEnd int) (loc ExifItemLocation, ok bool, err error) {
+	iinfHdr, iinfOK, err := FindChild(data, metaBodyStart, metaCEnd, "iinf")
+	if err != nil {
+		return loc, false, err
+	}
+	ilocHdr, ilocOK, err := FindChild(data, metaBodyStart, metaCEnd, "iloc")
+	if err != nil || !iinfOK || !ilocOK {
+		return loc, false, err
+	}
+	items, err := ParseIinfItems(data, iinfHdr.ContentStart, iinfHdr.ContentEnd)
+	if err != nil {
+		return loc, false, err
+	}
+	var exifID uint32
+	found := false
+	for _, it := range items {
+		if it.ItemType == "Exif" {
+			exifID, found = it.ItemID, true
+			break
+		}
+	}
+	if !found {
+		return loc, false, nil
+	}
+	iloc, err := ParseIloc(data, ilocHdr.ContentStart, ilocHdr.ContentEnd)
+	if err != nil {
+		return loc, false, err
+	}
+	for _, it := range iloc.Items {
+		if it.ItemID != exifID {
+			continue
+		}
+		if it.ConstrMethod != 0 || len(it.Extents) == 0 {
+			return loc, false, nil // only handle the simple/common absolute-offset case
+		}
+		abs, carry := bits.Add64(it.BaseOffset, it.Extents[0].Offset, 0)
+		if carry != 0 {
+			abs = math.MaxUint64 // Python's sum is >= 2^64: past the end of any data
+		}
+		return ExifItemLocation{exifID, abs, it.Extents[0].Length}, true, nil
+	}
+	return loc, false, nil
+}
+
+// ExifOrientationField is find_exif_orientation_field's
+// (abs_offset_of_2byte_value, byte_order, current_value).
+type ExifOrientationField struct {
+	AbsOffset int
+	ByteOrder binary.ByteOrder // binary.LittleEndian ('II') or binary.BigEndian ('MM')
+	Value     uint16
+}
+
+// FindExifOrientationField locates the embedded Exif item's Orientation
+// tag, or returns ok=false if there's no embedded Exif item or no
+// Orientation tag in it (← find_exif_orientation_field).
+func FindExifOrientationField(data []byte, metaBodyStart, metaCEnd int) (field ExifOrientationField, ok bool, err error) {
+	loc, ok, err := FindExifItemLocation(data, metaBodyStart, metaCEnd)
+	if err != nil || !ok {
+		return field, false, err
+	}
+	blob := pySlice64(data, loc.AbsStart, loc.Length)
+	if len(blob) < 12 {
+		return field, false, nil
+	}
+	tiffHeaderOffset := binary.BigEndian.Uint32(blob[0:4])
+	tiffStartInBlob := 4 + int(tiffHeaderOffset)
+	tiff := pySlice(blob, tiffStartInBlob, len(blob))
+	if len(tiff) < 8 || (string(tiff[:2]) != "II" && string(tiff[:2]) != "MM") {
+		return field, false, nil
+	}
+	var order binary.ByteOrder = binary.BigEndian
+	if string(tiff[:2]) == "II" {
+		order = binary.LittleEndian
+	}
+	ifd0Offset := int(order.Uint32(tiff[4:8]))
+	if ifd0Offset+2 > len(tiff) {
+		return field, false, nil
+	}
+	numEntries := int(order.Uint16(tiff[ifd0Offset : ifd0Offset+2]))
+	pos := ifd0Offset + 2
+	for range numEntries {
+		entry := pySlice(tiff, pos, pos+12)
+		if len(entry) < 12 {
+			break
+		}
+		if tag := order.Uint16(entry[0:2]); tag == 0x0112 { // Orientation
+			absValueOffset := int(loc.AbsStart) + tiffStartInBlob + pos + 8
+			return ExifOrientationField{absValueOffset, order, order.Uint16(entry[8:10])}, true, nil
+		}
+		pos += 12
+	}
+	return field, false, nil
 }
 
 // @@SECTIONS@@

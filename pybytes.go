@@ -125,3 +125,17 @@ func splice(buf []byte, a, b int, repl []byte) []byte {
 	copy(buf[a:], repl)
 	return buf[:newLen]
 }
+
+// pySlice64 mirrors memoryview(data)[start:start+length] for 64-bit values
+// taken straight from a file (an iloc extent), which may lie far past the
+// end of data or overflow when added.
+func pySlice64(data []byte, start, length uint64) []byte {
+	if start >= uint64(len(data)) {
+		return data[len(data):]
+	}
+	end := uint64(len(data))
+	if length < end-start {
+		end = start + length
+	}
+	return data[start:end:end]
+}
