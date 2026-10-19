@@ -19,12 +19,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"iter"
 	"maps"
 	"math"
 	"math/big"
 	"math/bits"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -1218,6 +1220,449 @@ func ParseProvenanceLenient(data []byte, hdr BoxHeader) (version uint8, entries 
 		return 0, nil, false, err
 	}
 	return version, entries, pos == hdr.ContentEnd, nil
+}
+
+// ---------------------------------------------------------------------------
+// Main rotation logic (forward)
+// ---------------------------------------------------------------------------
+
+// logger writes Python's verbose print() lines; a nil writer is silent
+// (verbose=False).
+type logger struct{ w io.Writer }
+
+func (l logger) printf(format string, args ...any) {
+	if l.w != nil {
+		fmt.Fprintf(l.w, format+"\n", args...)
+	}
+}
+
+// RotateOptions are ApplyRotation's options. The zero value matches
+// Python's defaults except for logging: Python's verbose=True prints to
+// stdout, while a nil Log is silent.
+type RotateOptions struct {
+	NoExifSync bool      // don't sync the legacy embedded Exif Orientation tag (sync_exif=False)
+	Log        io.Writer // receives the verbose diagnostic lines; nil = silent
+}
+
+// workingCopy mirrors bytearray(data), with spare capacity so splice can
+// grow it in place.
+func workingCopy(data []byte) []byte {
+	out := make([]byte, len(data), len(data)+spliceSlack)
+	copy(out, data)
+	return out
+}
+
+// spliceOp is one (start, end, new_bytes) replacement.
+type spliceOp struct {
+	start, end int
+	repl       []byte
+}
+
+// ApplyRotation rotates the image by deltaTurns quarter-turns
+// COUNTER-CLOCKWISE ON TOP OF whatever rotation is already recorded (0 if
+// none) - NOT to an absolute angle - and returns the edited file
+// (← apply_rotation). "rotate 90" always means "turn it another quarter turn
+// from however it looks now", exactly like rotating a physical photo.
+// deltaTurns=0 is a genuine no-op for the visual orientation and can be
+// used purely to add (or update) tracking metadata.
+//
+// The input is never modified.
+func ApplyRotation(data []byte, deltaTurns int, opts RotateOptions) ([]byte, error) {
+	log := logger{opts.Log}
+	deltaTurns &= 0x3
+
+	structInfo, err := LocateStructures(data)
+	if err != nil {
+		return nil, err
+	}
+	metaStart := structInfo.MetaHdr.Start
+	metaBodyStart := structInfo.MetaBodyStart
+	metaCEnd := structInfo.MetaHdr.ContentEnd
+	primaryItemID := structInfo.PrimaryItemID
+	iprpHdr := structInfo.IprpHdr
+	ilocHdr := structInfo.IlocHdr
+
+	ipcoHdr, ipmaHdr, ok, err := iprpParts(data, iprpHdr.ContentStart, iprpHdr.ContentEnd)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, boxParseErrorf("'iprp' is missing 'ipco' or 'ipma'")
+	}
+	ipcoChildren, err := ParseIpcoChildren(data, ipcoHdr.ContentStart, ipcoHdr.ContentEnd)
+	if err != nil {
+		return nil, err
+	}
+	ipmaVersion, ipmaFlags, ipmaEntries, err := ParseIpma(data, ipmaHdr.ContentStart, ipmaHdr.ContentEnd)
+	if err != nil {
+		return nil, err
+	}
+	primary, ok := primaryEntry(ipmaEntries, primaryItemID)
+	if !ok {
+		return nil, boxParseErrorf("primary item %d has no 'ipma' entry at all - "+
+			"unexpected file structure, refusing to guess", primaryItemID)
+	}
+
+	if log.w != nil {
+		propTypes := make([]string, len(ipcoChildren))
+		for i, h := range ipcoChildren {
+			propTypes[i] = pyfmt.DecodeASCIIReplace(h.Type[:])
+		}
+		assocs := make([]pyfmt.IntBool, len(primary.Assocs))
+		for i, a := range primary.Assocs {
+			assocs[i] = pyfmt.IntBool{Int: a.PropIndex, Bool: a.Essential}
+		}
+		log.printf("[info] primary item id = %d", primaryItemID)
+		log.printf("[info] ipco properties (1-based) = %s", pyfmt.EnumerateList(propTypes))
+		log.printf("[info] primary item associations = %s", pyfmt.IntBoolList(assocs))
+	}
+
+	// -- Have we edited this file before? If so, preserve the ORIGINAL
+	// -- pristine snapshots captured on the very first edit - never
+	// -- recapture, or reverse would only be able to undo the latest edit
+	// -- instead of getting back to the true original.
+	var existingProvenance ProvenanceEntries // nil <=> Python None
+	if structInfo.ProvenanceHdr != nil {
+		if _, existingProvenance, err = ParseProvenance(data, *structInfo.ProvenanceHdr); err != nil {
+			return nil, err
+		}
+		log.printf("[info] existing provenance record found - this file has " +
+			"been edited by heic-lossless-rotate before; preserving its " +
+			"saved original snapshot")
+	}
+
+	// Pristine snapshots we may need to save (only on the FIRST ever edit).
+	// The pristine 'irot' state itself is captured inside whichever of the
+	// FAST/SLOW PATH branches below actually runs.
+	pristineMetaSize := pySliceCopy(data, metaStart, metaStart+4)
+	var pristineIlocContent []byte
+	if ilocHdr != nil {
+		pristineIlocContent = pySliceCopy(data, ilocHdr.ContentStart, ilocHdr.ContentEnd)
+	}
+	exifField, hasExif, err := FindExifOrientationField(data, metaBodyStart, metaCEnd)
+	if err != nil {
+		return nil, err
+	}
+	var pristineExifOrientation []byte
+	if hasExif {
+		pristineExifOrientation = make([]byte, 2) // struct.pack(byte_order + 'H', cur_value)
+		exifField.ByteOrder.PutUint16(pristineExifOrientation, exifField.Value)
+	}
+	var pristineIrotByte byte
+	var pristineIpmaFlags uint32
+
+	// ---- FAST PATH: existing irot already associated with primary item ----
+	// New value is the CURRENT value plus the requested delta, mod 4 - so
+	// the person rotating never needs to know the existing orientation.
+	// deltaTurns=0 therefore always yields newTurns == currentTurns.
+	var out []byte
+	fastPath := false
+	var currentTurns, newTurns int
+	if child, ok := findIrotChild(primary, ipcoChildren); ok {
+		fastPath = true
+		irotDataPos := child.ContentStart
+		b, err := pyIndex(data, irotDataPos)
+		if err != nil {
+			return nil, err
+		}
+		if existingProvenance == nil {
+			// First-ever edit, and it happens to be fast-path - the file
+			// already had 'irot' before we ever touched it. Save the exact
+			// original BYTE (not just the masked 2-bit angle).
+			pristineIrotByte = b
+		}
+		currentTurns = int(b & 0x3)
+		newTurns = (currentTurns + deltaTurns) % 4
+		out = workingCopy(data)
+		if newTurns == currentTurns {
+			log.printf("[fast path] existing 'irot' = %d deg; delta %d deg leaves it "+
+				"unchanged - box left as-is", currentTurns*90, deltaTurns*90)
+		} else {
+			out[irotDataPos] = byte(newTurns)
+			log.printf("[fast path] existing 'irot' = %d deg, + %d deg delta -> "+
+				"%d deg, patched in place at offset %d", currentTurns*90, deltaTurns*90, newTurns*90, irotDataPos)
+		}
+	}
+
+	// ---- SLOW PATH: no irot property associated with primary item; insert one ----
+	if !fastPath {
+		if existingProvenance == nil {
+			// First-ever edit, no 'irot' existed - the pre-insertion ipma
+			// flags are the pristine value we may need to restore on
+			// reverse (if inserting 'irot' sets the "wide" index flag bit).
+			pristineIpmaFlags = ipmaFlags
+		}
+		currentTurns = 0 // absence of 'irot' implies 0 deg per spec
+		newTurns = (currentTurns + deltaTurns) % 4
+		if deltaTurns == 0 {
+			log.printf("[angle 0] no 'irot' property exists yet - inserting " +
+				"an explicit irot=0 (this matches the orientation " +
+				"already implied by its absence, so the actual " +
+				"displayed orientation does not change)")
+		} else {
+			log.printf("[slow path] no 'irot' property associated with the "+
+				"primary item (implied 0 deg) - inserting one with "+
+				"%d deg after applying the %d deg delta", newTurns*90, deltaTurns*90)
+		}
+
+		newIrotBox := makeBox("irot", []byte{byte(newTurns)})
+		newIpcoContent := append(pySliceCopy(data, ipcoHdr.ContentStart, ipcoHdr.ContentEnd), newIrotBox...)
+		newIpcoBox := makeBox("ipco", newIpcoContent)
+		newPropertyIndex := len(ipcoChildren) + 1
+
+		newFlags := ipmaFlags
+		if newPropertyIndex > 0x7f { // wide_needed
+			newFlags |= 1
+		}
+
+		newEntries := make([]IpmaEntry, len(ipmaEntries))
+		for i, e := range ipmaEntries {
+			assocs := append([]IpmaAssoc(nil), e.Assocs...)
+			if e.ItemID == primaryItemID {
+				assocs = append(assocs, IpmaAssoc{PropIndex: newPropertyIndex, Essential: true})
+			}
+			newEntries[i] = IpmaEntry{ItemID: e.ItemID, Assocs: assocs}
+		}
+		newIpmaBox, err := BuildIpma(ipmaVersion, newFlags, newEntries)
+		if err != nil {
+			return nil, err
+		}
+
+		var newIprpContent []byte
+		if ipcoHdr.Start < ipmaHdr.Start { // first_is_ipco
+			newIprpContent = append(newIpcoBox, newIpmaBox...)
+		} else {
+			newIprpContent = append(newIpmaBox, newIpcoBox...)
+		}
+		newIprpBox := makeBox("iprp", newIprpContent)
+
+		delta := len(newIprpBox) - (iprpHdr.ContentEnd - iprpHdr.Start)
+
+		var ops []spliceOp
+		newIlocContent, anyChanged, err := PatchIlocOffsetsAtThreshold(data, ilocHdr, iprpHdr.Start, delta)
+		if err != nil {
+			return nil, err
+		}
+		var ilocPatchOp *spliceOp
+		if anyChanged {
+			ilocPatchOp = &spliceOp{ilocHdr.ContentStart, ilocHdr.ContentEnd, newIlocContent}
+			log.printf("[slow path] patched absolute offsets in 'iloc' " +
+				"(metadata precedes media data in this file's layout)")
+		}
+
+		// We patch meta's size by overwriting its leading 4-byte field in
+		// place - this only works if 'meta' uses a standard 32-bit box
+		// header. The standard also permits a 64-bit "largesize" header or
+		// a size-extends-to-EOF header for ANY box; supporting that would
+		// mean growing/shrinking an 8-byte field instead of overwriting a
+		// 4-byte one in place, which none of the insertion math here
+		// accounts for. So we refuse, before any bytes have been touched.
+		metaSizeField, err := unpackU32(data, metaStart)
+		if err != nil {
+			return nil, err
+		}
+		if metaSizeField == 0 || metaSizeField == 1 {
+			return nil, boxParseErrorf("meta box uses 64-bit/extends-to-EOF size field; " +
+				"this script only handles standard 32-bit headers")
+		}
+		newMetaSize := int64(metaSizeField) + int64(delta)
+		if newMetaSize < 0 || newMetaSize > math.MaxUint32 { // Python: struct.error (COMPAT D2)
+			return nil, boxParseErrorf("new meta box size %d doesn't fit in its 32-bit size field", newMetaSize)
+		}
+		ops = append(ops,
+			spliceOp{metaStart, metaStart + 4, binary.BigEndian.AppendUint32(nil, uint32(newMetaSize))},
+			spliceOp{iprpHdr.Start, iprpHdr.ContentEnd, newIprpBox})
+		if ilocPatchOp != nil {
+			ops = append(ops, *ilocPatchOp)
+		}
+		sort.SliceStable(ops, func(i, j int) bool { return ops[i].start > ops[j].start })
+
+		out = workingCopy(data)
+		for _, op := range ops {
+			out = splice(out, op.start, op.end, op.repl)
+		}
+
+		log.printf("[slow path] inserted new 'irot' property (index "+
+			"%d), grew container by %d bytes", newPropertyIndex, delta)
+	}
+
+	// ---- Sync the legacy embedded Exif Orientation tag, if present ----
+	// Only when the effective orientation actually changed - if the delta
+	// left it at the same value it already had (delta 0, most commonly),
+	// nothing that represents displayed orientation should be touched.
+	if !opts.NoExifSync && newTurns != currentTurns {
+		// re-locate fresh against the (possibly resized) output buffer
+		infoNow, err := LocateStructures(out)
+		if err != nil {
+			return nil, err
+		}
+		fieldNow, ok, err := FindExifOrientationField(out, infoNow.MetaBodyStart, infoNow.MetaHdr.ContentEnd)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			newExifOrientation := IrotToExifOrientation[newTurns]
+			if fieldNow.AbsOffset+2 > len(out) { // Python: struct.error (COMPAT D2)
+				return nil, errUnpack(2, fieldNow.AbsOffset, len(out))
+			}
+			fieldNow.ByteOrder.PutUint16(out[fieldNow.AbsOffset:], newExifOrientation)
+			log.printf("[exif sync] embedded legacy Exif Orientation tag "+
+				"updated to %d (offset %d)", newExifOrientation, fieldNow.AbsOffset)
+		} else {
+			log.printf("[exif sync] no embedded legacy Exif Orientation tag found " +
+				"- nothing to sync")
+		}
+	}
+
+	// ---- Update / create the provenance box ----
+	entries := ProvenanceEntries{}
+	if existingProvenance != nil {
+		// keep the true-original snapshots untouched
+		for _, tag := range []string{"OILC", "OMSZ", "OEXO", "PCRC"} {
+			if v, ok := existingProvenance[tag]; ok {
+				entries[tag] = v
+			}
+		}
+		if oirt, ok := existingProvenance["OIRT"]; ok {
+			// Already v2 format - carry the leaner entries forward as-is.
+			entries["OIRT"] = oirt
+			if oipf, ok := existingProvenance["OIPF"]; ok {
+				entries["OIPF"] = oipf
+			}
+		} else if oldOprp, ok := existingProvenance["OPRP"]; ok {
+			// v1 record: it saved the WHOLE pristine 'iprp' box. Migrate it
+			// forward to v2's leaner OIRT(+OIPF) representation now, by
+			// asking the same "did 'irot' already exist?" question of that
+			// OLD snapshot instead of the live file. The full OPRP snapshot
+			// is then dropped.
+			hadIrot, irotByte, origIpmaFlags, err := extractIrotState(oldOprp, 8, len(oldOprp), primaryItemID)
+			if err != nil {
+				return nil, err
+			}
+			if hadIrot {
+				entries["OIRT"] = []byte{irotByte}
+			} else {
+				entries["OIRT"] = []byte{}
+				entries["OIPF"] = flagsBytes(origIpmaFlags)
+			}
+			log.printf("[provenance] migrating v1 record's full 'iprp' " +
+				"snapshot to the leaner v2 format (irot-only)")
+		} else {
+			return nil, provenanceErrorf("existing provenance record has neither 'OIRT' nor " +
+				"'OPRP' - don't know how to determine its original " +
+				"irot state")
+		}
+	} else {
+		if fastPath {
+			entries["OIRT"] = []byte{pristineIrotByte}
+		} else {
+			entries["OIRT"] = []byte{}
+			entries["OIPF"] = flagsBytes(pristineIpmaFlags)
+		}
+		entries["OMSZ"] = pristineMetaSize
+		if pristineIlocContent != nil {
+			entries["OILC"] = pristineIlocContent
+		}
+		if pristineExifOrientation != nil {
+			entries["OEXO"] = pristineExifOrientation
+		}
+		// PCRC: crc32 of the truly original file (no provenance box existed yet)
+		entries["PCRC"] = binary.BigEndian.AppendUint32(nil, crc32.ChecksumIEEE(data))
+	}
+
+	// TVER: the version performing THIS update - a "who last updated this
+	// file" marker, freshly written on every edit rather than carried
+	// forward. ReverseRotation never writes it.
+	tver, err := versionTuple()
+	if err != nil {
+		return nil, err
+	}
+	entries["TVER"] = tver[:]
+
+	// Insert, resize, or same-size-update the provenance box - one
+	// operation: splice a possibly-different-size blob in, patching iloc
+	// for the size delta if there is one.
+	//   - oldProvSize == 0: first-time insertion.
+	//   - oldProvSize == newProvSize: every edit after the first (only
+	//     CCRC's and TVER's fixed-width VALUES change).
+	//   - otherwise: a one-time migration of a record written by an older
+	//     version (e.g. one predating TVER, or a v1 record).
+	infoNow, err := LocateStructures(out)
+	if err != nil {
+		return nil, err
+	}
+	var oldProvStart, oldProvEnd int
+	if infoNow.ProvenanceHdr != nil {
+		oldProvStart, oldProvEnd = infoNow.ProvenanceHdr.Start, infoNow.ProvenanceHdr.ContentEnd
+	} else {
+		oldProvStart, oldProvEnd = infoNow.MetaHdr.ContentEnd, infoNow.MetaHdr.ContentEnd
+	}
+	oldProvSize := oldProvEnd - oldProvStart
+
+	// CCRC is a fixed 4-byte field regardless of its value, so a
+	// placeholder-CCRC box gives the real box's size before the real CCRC
+	// (which depends on the fully-patched buffer) is known.
+	entries["CCRC"] = []byte{0, 0, 0, 0}
+	placeholderProvBox, err := BuildProvenanceBox(FormatVersion, entries)
+	if err != nil {
+		return nil, err
+	}
+	newProvSize := len(placeholderProvBox)
+	provDelta := newProvSize - oldProvSize
+
+	if provDelta != 0 {
+		// This box is a TOP-LEVEL SIBLING of 'meta' (right after it), so
+		// changing its size never touches meta's own size field - but if
+		// 'meta' sits BEFORE 'mdat', every iloc absolute offset pointing
+		// into mdat needs to shift by the size delta. This is a SEPARATE
+		// delta from the iprp-insertion patch earlier (if any).
+		ilocHdrNow := infoNow.IlocHdr
+		newIlocContent, anyChanged, err := PatchIlocOffsetsAtThreshold(out, ilocHdrNow, oldProvEnd, provDelta)
+		if err != nil {
+			return nil, err
+		}
+		if anyChanged {
+			out = splice(out, ilocHdrNow.ContentStart, ilocHdrNow.ContentEnd, newIlocContent)
+			log.printf("[provenance] patched absolute offsets in 'iloc' " +
+				"for the provenance box's own insertion/resize too " +
+				"(metadata precedes media data in this file's " +
+				"layout)")
+		}
+		if oldProvSize != 0 {
+			log.printf("[provenance] existing record predates an entry tag "+
+				"this tool version writes - migrating it in place "+
+				"(%d -> %d bytes)", oldProvSize, newProvSize)
+		}
+	}
+
+	// Now compute the REAL CCRC over the file as it will be immediately
+	// BEFORE the provenance box is (re)written - with iloc already patched
+	// and the provenance box itself excluded.
+	ccrc := Crc32ExcludingRange(out, oldProvStart, oldProvEnd)
+	entries["CCRC"] = binary.BigEndian.AppendUint32(nil, ccrc)
+	newProvBox, err := BuildProvenanceBox(FormatVersion, entries)
+	if err != nil {
+		return nil, err
+	}
+	if len(newProvBox) != newProvSize {
+		return nil, boxParseErrorf("internal error: provenance box size changed between " +
+			"placeholder and real CCRC - CCRC should always be a " +
+			"fixed 4 bytes")
+	}
+	out = splice(out, oldProvStart, oldProvEnd, newProvBox)
+
+	action := "created"
+	if len(existingProvenance) > 0 { // Python: `if existing_provenance` (dict truthiness)
+		action = "updated"
+	}
+	log.printf("[provenance] %s provenance record (format v%d, %d bytes)", action, FormatVersion, len(newProvBox))
+
+	return out, nil
+}
+
+// flagsBytes mirrors struct.pack('>I', flags)[1:]: the low 3 bytes.
+func flagsBytes(flags uint32) []byte {
+	return []byte{byte(flags >> 16), byte(flags >> 8), byte(flags)}
 }
 
 // @@SECTIONS@@
