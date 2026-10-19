@@ -6,11 +6,16 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	heicrotate "github.com/pjg/go-heic-lossless-rotate"
+	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
 )
 
 // buildParser builds the argument parser (← build_parser). Shared flags are
@@ -184,4 +189,190 @@ func insertImplicitRotate(argv []string) []string {
 		// subcommand name, or garbage the parser should report as such)
 	}
 	return argv
+}
+
+// Main runs the CLI with argv (argv[0] is the program name) and returns the
+// process exit code (← main; Python calls sys.exit instead):
+//
+//	0       rotate/reverse succeeded, or -h/-V/-G
+//	0-4     info: see FormatInfo
+//	2       usage error, or no arguments at all (help is printed to stdout)
+//	10      a genuine error (heicrotate.ErrorExitCode)
+func Main(argv []string, stdout, stderr io.Writer) int {
+	prog := "heic-lossless-rotate"
+	if len(argv) > 0 {
+		prog = filepath.Base(argv[0])
+	}
+	ap := buildParser(prog)
+	if len(argv) <= 1 {
+		fmt.Fprint(stdout, ap.formatHelp())
+		return 2
+	}
+	a := &args{}
+	if err := ap.parse(insertImplicitRotate(argv[1:]), a, stdout, stderr); err != nil {
+		var ee *exitError
+		if errors.As(err, &ee) {
+			return ee.code
+		}
+		return 2
+	}
+
+	data, err := os.ReadFile(a.input)
+	if err == nil {
+		var code int
+		if code, err = run(a, data, stdout); err == nil {
+			return code
+		}
+	}
+	fmt.Fprintf(stderr, "error: %s\n", errorText(err))
+	return heicrotate.ErrorExitCode
+}
+
+// errorText renders an error the way Python's f"error: {e}" does for the
+// exception types main() catches.
+func errorText(err error) string {
+	var be *heicrotate.BoxParseError
+	var pe *heicrotate.ProvenanceError
+	var refuse *refuseOverwriteError
+	switch {
+	case errors.As(err, &be):
+		return be.Msg
+	case errors.As(err, &pe):
+		return pe.Msg
+	case errors.As(err, &refuse):
+		return refuse.msg
+	default:
+		return pyfmt.OSError(err)
+	}
+}
+
+// refuseOverwriteError is the OSError upstream raises (with a plain
+// message, no errno) when the output exists and -f wasn't given.
+type refuseOverwriteError struct{ msg string }
+
+func (e *refuseOverwriteError) Error() string { return e.msg }
+
+// verifyReversible is the post-rotate self-check, indirected so tests can
+// force a failure (upstream patches cli.verify_reversible the same way).
+var verifyReversible = heicrotate.VerifyReversible
+
+// run executes the parsed command against the input file's bytes
+// (← _run) and returns the exit code.
+func run(a *args, data []byte, stdout io.Writer) (int, error) {
+	if a.cmd == "info" {
+		result, err := heicrotate.GatherInfo(data)
+		if err != nil {
+			return 0, err
+		}
+		text, exitCode := heicrotate.FormatInfo(result, a.quiet)
+		if text != "" {
+			fmt.Fprintln(stdout, text)
+		}
+		return exitCode, nil
+	}
+
+	var log io.Writer
+	if !a.quiet {
+		log = stdout
+	}
+	say := func(format string, args ...any) {
+		if !a.quiet {
+			fmt.Fprintf(stdout, format+"\n", args...)
+		}
+	}
+
+	var out []byte
+	var outPath string
+	if a.cmd == "rotate" {
+		deltaTurns := (a.rotation / 90) % 4
+		var err error
+		out, err = heicrotate.ApplyRotation(data, deltaTurns, heicrotate.RotateOptions{NoExifSync: a.noExifSync, Log: log})
+		if err != nil {
+			return 0, err
+		}
+		if err := heicrotate.VerifyStructure(out); err != nil {
+			return 0, err
+		}
+		say("[ok] output box structure is internally consistent")
+
+		// Post-rotate reversibility self-check: verify - in memory, before
+		// writing anything to disk - that reversing our own freshly-
+		// produced output would reconstruct the true original. A failure
+		// aborts the rotate rather than producing a file this tool claims
+		// to be able to reverse but actually can't.
+		if err := verifyReversible(out, heicrotate.ReverseOptions{}); err != nil {
+			return 0, &heicrotate.ProvenanceError{
+				Msg: "post-rotate reversibility self-check failed - refusing " +
+					"to write output: " + errorText(err),
+				Err: err,
+			}
+		}
+		say("[ok] reversibility self-check passed - output can be " +
+			"fully reversed back to the original file")
+
+		outPath = a.output
+		if outPath == "" {
+			outPath = defaultRotateOutput(a.input)
+		}
+	} else {
+		var err error
+		out, err = heicrotate.ReverseRotation(data, heicrotate.ReverseOptions{IgnoreTamper: a.ignoreTamperCheck, Log: log})
+		if err != nil {
+			return 0, err
+		}
+		if err := heicrotate.VerifyStructure(out); err != nil {
+			return 0, err
+		}
+		say("[ok] output box structure is internally consistent")
+		outPath = a.output
+		if outPath == "" {
+			outPath = defaultReverseOutput(a.input)
+		}
+	}
+
+	if _, err := os.Stat(outPath); err == nil && !a.force { // os.path.exists
+		return 0, &refuseOverwriteError{fmt.Sprintf("refusing to overwrite existing file '%s' "+
+			"- use -f/--force to overwrite it", outPath)}
+	}
+
+	if a.dryRun {
+		say("[dry-run] %s would succeed - would write %s (%d bytes, %+d vs input). No file written.",
+			a.cmd, outPath, len(out), len(out)-len(data))
+		return 0, nil
+	}
+
+	if err := os.WriteFile(outPath, out, 0o666); err != nil {
+		return 0, err
+	}
+	say("[ok] wrote %s (%d bytes, %+d vs input)", outPath, len(out), len(out)-len(data))
+	return 0, nil
+}
+
+// pathStem strips the input's extension, taken from its base name only - a
+// dot in a directory name never counts, and neither does a dot-file's
+// leading dot (docs/COMPAT.md D1; Python uses input.rsplit('.', 1)[0] on
+// the whole path). For every ordinary "dir/name.ext" the result is the same.
+func pathStem(input string) string {
+	ext := filepath.Ext(input)
+	base := input[strings.LastIndexFunc(input, func(r rune) bool { return r < 0x80 && os.IsPathSeparator(byte(r)) })+1:]
+	if ext == "" || ext == base {
+		return input
+	}
+	return strings.TrimSuffix(input, ext)
+}
+
+// defaultRotateOutput is rotate's default output path: <input>_rotated.heic,
+// or - if the input looks like reverse's own default output - the
+// '_restored' suffix stripped instead.
+func defaultRotateOutput(input string) string {
+	stem := pathStem(input)
+	if strings.HasSuffix(stem, "_restored") {
+		return strings.TrimSuffix(stem, "_restored") + ".heic"
+	}
+	return stem + "_rotated.heic"
+}
+
+// defaultReverseOutput is reverse's default output path: <input>_restored.heic.
+func defaultReverseOutput(input string) string {
+	return pathStem(input) + "_restored.heic"
 }
