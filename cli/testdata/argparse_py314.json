@@ -1,0 +1,2519 @@
+[
+{
+"argv": [],
+"code": 2,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"--help"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"--he"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-V"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"--version"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"--vers"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-G"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: the following arguments are required: {rotate,reverse,info}"
+},
+{
+"argv": [
+"--goversion"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: the following arguments are required: {rotate,reverse,info}"
+},
+{
+"argv": [
+"rotate",
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"45",
+"x",
+"-h"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid choice: '45' (choose from '0', '90', '180', '270')"
+},
+{
+"argv": [
+"rotate",
+"-h",
+"45",
+"x"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"-q",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"-q",
+"rotate",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-q"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"090",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"+90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+" 90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"9_0",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90.0",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid int value: '90.0'"
+},
+{
+"argv": [
+"rotate",
+"-90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid choice: '-90' (choose from '0', '90', '180', '270')"
+},
+{
+"argv": [
+"rotate",
+"45",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid choice: '45' (choose from '0', '90', '180', '270')"
+},
+{
+"argv": [
+"rotate",
+"x",
+"90"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid int value: 'x'"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"y"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": "y",
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"y",
+"z"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: z"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-q",
+"y"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": "y",
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"-q",
+"x",
+"y"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": "y",
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: the following arguments are required: input"
+},
+{
+"argv": [
+"rotate"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: the following arguments are required: rotation, input"
+},
+{
+"argv": [
+"-q"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: the following arguments are required: {rotate,reverse,info}"
+},
+{
+"argv": [
+"bogus"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument {rotate,reverse,info}: invalid choice: 'bogus' (choose from 'rotate', 'reverse', 'info')"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--bogus"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: --bogus"
+},
+{
+"argv": [
+"--bogus",
+"rotate",
+"90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: --bogus"
+},
+{
+"argv": [
+"--bogus",
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"--bogus",
+"-V"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"--bogus",
+"-h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--dry"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": true,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--d"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": true,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--no"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": true
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--fo"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": true,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"--dry",
+"rotate",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": true,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"--q",
+"rotate",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"--f",
+"rotate",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": true,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-qf"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": true,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-fq"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": true,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"-qf",
+"rotate",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": true,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-quiet"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: -uiet"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--quiet=1"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument -q/--quiet: ignored explicit argument '1'"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"--",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"--",
+"-x.heic"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "-x.heic",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"-x.heic"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: the following arguments are required: input"
+},
+{
+"argv": [
+"rotate",
+"90",
+"-5"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "-5",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"-1.5"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "-1.5",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"-"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "-",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"info",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "info",
+"input": "x"
+},
+"err": ""
+},
+{
+"argv": [
+"info",
+"x",
+"-q"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "info",
+"input": "x"
+},
+"err": ""
+},
+{
+"argv": [
+"-q",
+"info",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "info",
+"input": "x"
+},
+"err": ""
+},
+{
+"argv": [
+"info",
+"x",
+"-f"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: -f"
+},
+{
+"argv": [
+"-f",
+"info",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": true,
+"cmd": "info",
+"input": "x"
+},
+"err": ""
+},
+{
+"argv": [
+"info",
+"x",
+"--dry-run"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: --dry-run"
+},
+{
+"argv": [
+"--dry-run",
+"info",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": true,
+"force": false,
+"cmd": "info",
+"input": "x"
+},
+"err": ""
+},
+{
+"argv": [
+"info",
+"x",
+"y"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: y"
+},
+{
+"argv": [
+"info"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py info: error: the following arguments are required: input"
+},
+{
+"argv": [
+"info",
+"90"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "info",
+"input": "90"
+},
+"err": ""
+},
+{
+"argv": [
+"reverse",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "reverse",
+"input": "x",
+"output": null,
+"ignore_tamper_check": false
+},
+"err": ""
+},
+{
+"argv": [
+"reverse",
+"x",
+"y",
+"--ignore"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "reverse",
+"input": "x",
+"output": "y",
+"ignore_tamper_check": true
+},
+"err": ""
+},
+{
+"argv": [
+"reverse",
+"x",
+"--i"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "reverse",
+"input": "x",
+"output": null,
+"ignore_tamper_check": true
+},
+"err": ""
+},
+{
+"argv": [
+"reverse",
+"x",
+"-f",
+"--dry-run"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": true,
+"force": true,
+"cmd": "reverse",
+"input": "x",
+"output": null,
+"ignore_tamper_check": false
+},
+"err": ""
+},
+{
+"argv": [
+"reverse",
+"x",
+"--no-exif-sync"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: --no-exif-sync"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--ignore-tamper-check"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: --ignore-tamper-check"
+},
+{
+"argv": [
+"rotate",
+"-V"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: the following arguments are required: rotation, input"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-V"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: -V"
+},
+{
+"argv": [
+"",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument {rotate,reverse,info}: invalid choice: '' (choose from 'rotate', 'reverse', 'info')"
+},
+{
+"argv": [
+"rotate",
+"90",
+""
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+""
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": "",
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"-V",
+"90",
+"x"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-q",
+"-q",
+"rotate",
+"90",
+"x",
+"-q"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-f",
+"-f"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": true,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"--",
+"rotate",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"-",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument {rotate,reverse,info}: invalid choice: '-' (choose from 'rotate', 'reverse', 'info')"
+},
+{
+"argv": [
+"rotate",
+"270",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 270,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"180",
+"x",
+"y",
+"--no-exif-sync",
+"-q",
+"-f",
+"--dry-run"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": true,
+"force": true,
+"cmd": "rotate",
+"rotation": 180,
+"input": "x",
+"output": "y",
+"no_exif_sync": true
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"0x5a",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid int value: '0x5a'"
+},
+{
+"argv": [
+"rotate",
+"٩٠",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"--help",
+"rotate"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"--help",
+"x"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"--dry-run=",
+"rotate",
+"90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument --dry-run: ignored explicit argument ''"
+},
+{
+"argv": [
+"-qz",
+"rotate",
+"90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: -z"
+},
+{
+"argv": [
+"-h",
+"bogus"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"bogus",
+"-h"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument {rotate,reverse,info}: invalid choice: 'bogus' (choose from 'rotate', 'reverse', 'info')"
+},
+{
+"argv": [
+"rotate",
+"  90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"9__0",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid int value: '9__0'"
+},
+{
+"argv": [
+"rotate",
+"_90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid int value: '_90'"
+},
+{
+"argv": [
+"rotate",
+"90_",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid int value: '90_'"
+},
+{
+"argv": [
+"rotate",
+"+-90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid int value: '+-90'"
+},
+{
+"argv": [
+"rotate",
+"0090",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"−90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid int value: '−90'"
+},
+{
+"argv": [
+"rotate",
+"９０",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"0",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 0,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"00",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 0,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"-0",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 0,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid int value: ''"
+},
+{
+"argv": [
+"rotate",
+"90 ",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"9 0",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid int value: '9 0'"
+},
+{
+"argv": [
+"rotate",
+"90",
+"-x y",
+"z"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "-x y",
+"output": "z",
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-5"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": "-5",
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"--",
+"-5",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid choice: '-5' (choose from '0', '90', '180', '270')"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"y",
+"--",
+"z"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: z"
+},
+{
+"argv": [
+"rotate",
+"--",
+"90",
+"--",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "--",
+"output": "x",
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"-q",
+"--",
+"info",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "info",
+"input": "x"
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"--",
+"x",
+"-q"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": "-q",
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"info",
+"--",
+"-q"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "info",
+"input": "-q"
+},
+"err": ""
+},
+{
+"argv": [
+"-qh"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"-qh"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-hq"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-qfh"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-Vq"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-qV"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"--quiet",
+"--quiet",
+"rotate",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"--no-exif-sync",
+"rotate",
+"90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: --no-exif-sync"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--n"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": true
+},
+"err": ""
+},
+{
+"argv": [
+"reverse",
+"x",
+"--ig"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "reverse",
+"input": "x",
+"output": null,
+"ignore_tamper_check": true
+},
+"err": ""
+},
+{
+"argv": [
+"reverse",
+"x",
+"--d"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": true,
+"force": false,
+"cmd": "reverse",
+"input": "x",
+"output": null,
+"ignore_tamper_check": false
+},
+"err": ""
+},
+{
+"argv": [
+"reverse",
+"x",
+"--f"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": true,
+"cmd": "reverse",
+"input": "x",
+"output": null,
+"ignore_tamper_check": false
+},
+"err": ""
+},
+{
+"argv": [
+"reverse",
+"x",
+"--q"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "reverse",
+"input": "x",
+"output": null,
+"ignore_tamper_check": false
+},
+"err": ""
+},
+{
+"argv": [
+"reverse",
+"x",
+"--h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"info",
+"x",
+"--q"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "info",
+"input": "x"
+},
+"err": ""
+},
+{
+"argv": [
+"info",
+"x",
+"--h"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"info",
+"x",
+"--he"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"info",
+"-h",
+"x"
+],
+"code": 0,
+"stdout": true,
+"stderr": false,
+"ns": null,
+"err": ""
+},
+{
+"argv": [
+"-5"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument {rotate,reverse,info}: invalid choice: '-5' (choose from 'rotate', 'reverse', 'info')"
+},
+{
+"argv": [
+"-5",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument {rotate,reverse,info}: invalid choice: '-5' (choose from 'rotate', 'reverse', 'info')"
+},
+{
+"argv": [
+"--",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"-",
+"90"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument {rotate,reverse,info}: invalid choice: '-' (choose from 'rotate', 'reverse', 'info')"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": "-",
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"9",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument rotation: invalid choice: '9' (choose from '0', '90', '180', '270')"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"--qui"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"---"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: ---"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"---q"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: ---q"
+},
+{
+"argv": [
+"---",
+"rotate",
+"90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: ---"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-q=1"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument -q/--quiet: ignored explicit argument '1'"
+},
+{
+"argv": [
+"rotate",
+"90",
+"x",
+"-f-q"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: argument -f/--force: ignored explicit argument '-q'"
+},
+{
+"argv": [
+"ROTATE",
+"90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument {rotate,reverse,info}: invalid choice: 'ROTATE' (choose from 'rotate', 'reverse', 'info')"
+},
+{
+"argv": [
+"rot",
+"90",
+"x"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: argument {rotate,reverse,info}: invalid choice: 'rot' (choose from 'rotate', 'reverse', 'info')"
+},
+{
+"argv": [
+"reverse"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py reverse: error: the following arguments are required: input"
+},
+{
+"argv": [
+"reverse",
+"x",
+"y",
+"z"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py: error: unrecognized arguments: z"
+},
+{
+"argv": [
+"reverse",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "reverse",
+"input": "90",
+"output": "x",
+"ignore_tamper_check": false
+},
+"err": ""
+},
+{
+"argv": [
+"90"
+],
+"code": 2,
+"stdout": false,
+"stderr": true,
+"ns": null,
+"err": "argprobe.py rotate: error: the following arguments are required: input"
+},
+{
+"argv": [
+"0",
+"x",
+"y"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": false,
+"cmd": "rotate",
+"rotation": 0,
+"input": "x",
+"output": "y",
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"270",
+"--dry-run",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": true,
+"force": false,
+"cmd": "rotate",
+"rotation": 270,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"-f",
+"90",
+"x"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": false,
+"dry_run": false,
+"force": true,
+"cmd": "rotate",
+"rotation": 90,
+"input": "x",
+"output": null,
+"no_exif_sync": false
+},
+"err": ""
+},
+{
+"argv": [
+"--force",
+"-q",
+"--dry-run",
+"180",
+"x",
+"y"
+],
+"code": "parsed",
+"stdout": false,
+"stderr": false,
+"ns": {
+"quiet": true,
+"dry_run": true,
+"force": true,
+"cmd": "rotate",
+"rotation": 180,
+"input": "x",
+"output": "y",
+"no_exif_sync": false
+},
+"err": ""
+}
+]
