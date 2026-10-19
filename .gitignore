@@ -53,3 +53,16 @@ go.work.sum
 # env file
 .env
 
+
+# ---> go-heic-lossless-rotate
+# Build outputs
+/bin/
+/dist/
+
+# Pinned upstream Python checkout used by `make difftest`
+/.upstream/
+
+# Real-file test inputs (bring your own .heic files) and visual-check outputs
+/testdata/*
+!/testdata/.keep
+/rotated/

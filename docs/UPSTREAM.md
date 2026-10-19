@@ -1,0 +1,96 @@
+# Upstream Tracking
+
+This Go module ports [heic-lossless-rotate](https://github.com/olegoz/heic-lossless-rotate)
+by Oleg Ostrozhansky (MIT). The Go port mirrors one pinned upstream release.
+
+## Pinned Upstream
+
+| | |
+|---|---|
+| Upstream version | **1.7.1** (`heicrotate.Version`) |
+| Upstream commit | see [`difftest/upstream.commit`](../difftest/upstream.commit), currently `70d6c73b5827aabf958c0649b3ac1c9e0dd33d05` (2026-10-08) |
+| Go port version | `heicrotate.GoVersion`, currently `1.7.1+go.1` |
+
+`difftest/upstream.commit` is the **single source of truth** for the pin.
+The Makefile (`make upstream`), CI, and the differential harness all read
+it. The harness refuses to run against a checkout at any other commit,
+or whose `_version.py` doesn't match `heicrotate.Version`. Set
+`HEIC_ROTATE_PY_ALLOW_UNPINNED=1` to override this for local experiments.
+
+## Bumping the Pin (porting a new upstream release)
+
+1. Read upstream's CHANGELOG and diff `core.py`/`cli.py`/tests between the old
+   and new commits.
+2. Write the new commit SHA to `difftest/upstream.commit` and run `make upstream`.
+3. Port the changes function by function, keeping the map below current.
+4. Set `Version` in `version.go` to the new upstream version and reset
+   `GoRevision` to 1.
+5. `make test difftest` must be green. Any new divergence goes in
+   [COMPAT.md](COMPAT.md).
+6. Add a row to the porting log below.
+
+For a Go-only fix release, bump `GoRevision` and nothing else (see
+[DESIGN.md § Go port version and release tags](DESIGN.md#go-port-version-and-release-tags)).
+
+## Porting Log
+
+| Upstream version | Upstream commit | Go version | Date | Notes |
+|---|---|---|---|---|
+| 1.7.1 | `70d6c73` | 1.7.1+go.1 | in progress | Initial port |
+
+## Python → Go Function Map
+
+Naming rules are in [DESIGN.md § Naming Rules](DESIGN.md#naming-rules-python--go).
+
+### Function map: `core.py` → `core.go`
+
+| Python | Go |
+|---|---|
+| `class BoxParseError` / `class ProvenanceError` | `type BoxParseError struct{Msg string; Err error}` / `type ProvenanceError …` (both `error`, both `Unwrap`) |
+| `FORMAT_VERSION` | `const FormatVersion = 2` |
+| `SUPPORTED_REVERSE_FORMAT_VERSIONS` | `var SupportedReverseFormatVersions = []int{1, 2}` |
+| `_version_tuple()` | `versionTuple() ([3]uint8, error)` |
+| `PROVENANCE_UUID` | `var ProvenanceUUID = [16]byte{0xe8,0x50,0x77,0x7c,…}` (`e850777c-3416-50a4-9fa8-6493cfc13f31`). Hardcoded, with a test re-deriving it as UUIDv5(NAMESPACE_URL, `urn:heic_rotate.py:provenance:v1`). |
+| `read_box_header(data, pos)` | `ReadBoxHeader(data []byte, pos int) (BoxHeader, bool, error)` (`ok=false` is Python's `None` at EOF) |
+| `iter_boxes(data, start, end)` | `IterBoxes(data []byte, start, end int) iter.Seq2[BoxHeader, error]`. Stays **lazy**: Python's `find_child` stops before reaching a malformed later box, and that acceptance behavior must match. |
+| `find_child` | `FindChild(data, start, end int, boxtype [4]byte) (BoxHeader, bool, error)` |
+| `find_unique_child` | `FindUniqueChild(data, start, end, boxtype, context string) (BoxHeader, bool, error)` |
+| `parse_pitm` | `ParsePitm(data, cStart, cEnd int) (uint32, error)` |
+| `parse_ipma` / `build_ipma` | `ParseIpma(...) (version uint8, flags uint32, entries []IpmaEntry, err error)` / `BuildIpma(version, flags, entries) ([]byte, error)` |
+| `parse_ipco_children` | `ParseIpcoChildren(...) ([]BoxHeader, error)` |
+| `parse_iloc` / `build_iloc_content` | `ParseIloc(...) (*Iloc, error)` / `BuildIlocContent(*Iloc) ([]byte, error)` |
+| `patch_iloc_offsets_at_threshold` | `PatchIlocOffsetsAtThreshold(data, ilocHdr *BoxHeader, threshold, delta int) ([]byte, bool, error)` |
+| `parse_iinf_items` | `ParseIinfItems(...) ([]IinfItem, error)` |
+| `IROT_TO_EXIF_ORIENTATION` / `EXIF_ORIENTATION_TO_IROT` | `IrotToExifOrientation = [4]uint16{1, 8, 3, 6}` / `ExifOrientationToIrot map[uint16]int` |
+| `find_exif_item_location` | `FindExifItemLocation(...) (ExifItemLocation, bool, error)` |
+| `find_exif_orientation_field` | `FindExifOrientationField(...) (ExifOrientationField, bool, error)` (`ByteOrder binary.ByteOrder`) |
+| `crc32_excluding_range` | `Crc32ExcludingRange(data, exclStart, exclEnd int) uint32` |
+| `find_provenance_box` | `FindProvenanceBox(data) (BoxHeader, bool, error)` |
+| `parse_provenance` / `parse_provenance_lenient` | `ParseProvenance(data, hdr) (uint8, ProvenanceEntries, error)` / `ParseProvenanceLenient(data, hdr) (uint8, ProvenanceEntries, bool, error)` |
+| `build_provenance_box` | `BuildProvenanceBox(version uint8, entries ProvenanceEntries) []byte` (keys emitted in sorted order, as in Python) |
+| `locate_structures` | `LocateStructures(data) (*Structures, error)` |
+| `_rotation_from_iprp_range` / `_extract_irot_state` | `rotationFromIprpRange` / `extractIrotState` |
+| `get_current_rotation` / `get_rotation_from_iprp_snapshot` | `GetCurrentRotation` / `GetRotationFromIprpSnapshot` |
+| `apply_rotation(data, delta_turns, sync_exif=True, verbose=True)` | `ApplyRotation(data []byte, deltaTurns int, opts RotateOptions) ([]byte, error)`; `RotateOptions{NoExifSync bool; Log io.Writer}` |
+| `_restore_meta_provenance_span` | `restoreMetaProvenanceSpan(span []byte, entries, log) ([]byte, error)` |
+| `_prepare_reversal` | `prepareReversal(...) (*reversal, error)` |
+| `_iter_reconstructed_chunks` | `iterReconstructedChunks(data, r *reversal) iter.Seq[[]byte]` (sub-slices of `data`, no copies) |
+| `reverse_rotation(data, ignore_tamper=False, verbose=True)` | `ReverseRotation(data, opts ReverseOptions) ([]byte, error)`; `ReverseOptions{IgnoreTamper bool; Log io.Writer}` |
+| `verify_reversible` | `VerifyReversible(data, opts ReverseOptions) error` |
+| `gather_info` | `GatherInfo(data) (*Info, error)` |
+| `format_info(result, quiet)` | `FormatInfo(info *Info, quiet bool) (text string, exitCode int)` (`""` is Python's `None`) |
+| `verify_structure` | `VerifyStructure(data) error` |
+| `ERROR_EXIT_CODE` | `const ErrorExitCode = 10` |
+| `_version_string()` | `VersionString() string` (exported so callers can print it) |
+| — (Go-only) | `GoRevision`, `GoVersion`, `GoVersionString()` (see Key Decisions) |
+
+### Function map: `cli.py` → `cli/cli.go`
+
+| Python | Go |
+|---|---|
+| `build_parser()` | `buildParser() *parser` (declarative spec consumed by `args.go`) |
+| `_BARE_ROTATION_VALUES` | `bareRotationValues` |
+| `_insert_implicit_rotate(argv)` | `insertImplicitRotate(argv []string) []string` (same algorithm) |
+| `main()` | `Main(args []string, stdout, stderr io.Writer) int` (returns the exit code instead of `sys.exit`, so it's testable in-process) |
+| `_run(args, data)` | `run(a *args, data []byte, stdout io.Writer) (int, error)` |
+

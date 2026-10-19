@@ -1,0 +1,62 @@
+# Runs on the GitHub mirror (primary repo: arena.the42.net). See docs/DESIGN.md.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, go ${{ matrix.go }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ["1.23", "stable"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - name: go vet
+        run: |
+          go vet ./...
+          go vet -tags difftest ./...
+      - name: staticcheck
+        if: matrix.go == 'stable'
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./...
+          staticcheck -tags difftest ./...
+      - name: go test
+        run: go test -race ./...
+
+  difftest:
+    name: difftest (vs pinned Python upstream)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read upstream pin
+        id: pin
+        run: echo "commit=$(cat difftest/upstream.commit)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: olegoz/heic-lossless-rotate
+          ref: ${{ steps.pin.outputs.commit }}
+          path: .upstream
+          # full history so `git rev-parse HEAD` resolves to the pinned SHA
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: make difftest
+        run: make difftest

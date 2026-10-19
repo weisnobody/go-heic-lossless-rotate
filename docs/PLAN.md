@@ -13,26 +13,27 @@ measured against the real upstream tool from day one.
 ## Implementation Order
 
 ### Phase 0: Scaffolding
-- [ ] `go mod init github.com/pjg/go-heic-lossless-rotate` (`go 1.23`), with `Makefile`
+- [x] `go mod init github.com/pjg/go-heic-lossless-rotate` (`go 1.23`), with `Makefile`
       targets `test`, `difftest`, `lint`, `build`
-- [ ] `version.go` (`Version = "1.7.1"`, `GoRevision = 1`, `GoVersion`,
+- [x] `version.go` (`Version = "1.7.1"`, `GoRevision = 1`, `GoVersion`,
       `GoVersionString()`), `doc.go`
 - [ ] Create the GitHub repo and configure the arena → GitHub push mirror (branches + tags)
-- [ ] `docs/UPSTREAM.md`: pinned commit `70d6c73`, the Python↔Go function map
+      *(owner: user; not done in the Phase 0–1 implementation)*
+- [x] `docs/UPSTREAM.md`: pinned commit `70d6c73`, the Python↔Go function map
       (from DESIGN.md), and a porting log
-- [ ] `docs/COMPAT.md` skeleton with D1–D5
-- [ ] `.gitignore`: `testdata/*`, `!testdata/.keep`, `rotated/`, `bin/`, `dist/`
-- [ ] CI (GitHub Actions on the mirror): `go vet`, `staticcheck`,
+- [x] `docs/COMPAT.md` skeleton with D1–D5
+- [x] `.gitignore`: `testdata/*`, `!testdata/.keep`, `rotated/`, `bin/`, `dist/`
+- [x] CI (GitHub Actions on the mirror): `go vet`, `staticcheck`,
       `go test -race ./...` on linux/macos/windows
 
 ### Phase 1: Test foundation
-- [ ] `internal/synth`: port of `synth_heic.py` (`BuildSyntheticHEIC(Options)`
+- [x] `internal/synth`: port of `synth_heic.py` (`BuildSyntheticHEIC(Options)`
       with layout, include_irot, irot_value, include_exif, exif_orientation,
       exif_position, extra_mdat)
-- [ ] `difftest/` harness: locate `$HEIC_ROTATE_PY_SRC`, run the Python CLI and
-      generator, compare bytes, stdout, stderr, and exit codes. Allow-list for
-      COMPAT cases.
-- [ ] **Gate:** the Go synth output is byte-identical to Python's `synth_heic.py` for
+- [x] `difftest/` harness: locate `$HEIC_ROTATE_PY_SRC`, run the Python CLI and
+      generator, compare bytes, stdout, stderr, and exit codes. (The COMPAT
+      allow-list moved to Phase 3, where the first divergences appear.)
+- [x] **Gate:** the Go synth output is byte-identical to Python's `synth_heic.py` for
       every parameter combination
 
 ### Phase 2: Core port (`core.go`), in `core.py` order
@@ -70,6 +71,7 @@ measured against the real upstream tool from day one.
       (`rotate -G` is a usage error), and `-V` output unchanged
 - [ ] Port `TestCLI` plus group 5's CLI tests (in-process via `cli.Main`, plus a
       few subprocess tests against the built binaries)
+- [ ] Difftest COMPAT allow-list (match cases by COMPAT.md ID)
 - [ ] Difftest: the argv edge-case table vs argparse (exit codes), and the full CLI
       corpus (bytes, stdout, stderr, exit codes)
 - [ ] **Gate:** zero unexplained CLI diffs, and every allowed diff is listed in COMPAT.md
