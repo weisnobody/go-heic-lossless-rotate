@@ -42,22 +42,30 @@ type cliOutcome struct {
 	Stderr string `json:"stderr"`
 }
 
-// tree returns every file under dir (relative path -> contents; "/" marks
-// a directory).
+// tree returns every entry under dir: relative path -> a description of
+// its type, permission bits, and contents (or symlink target). Comparing
+// trees therefore checks what Python's in-place write and Go's atomic one
+// leave behind: bytes, modes, symlinks still being symlinks, and hard
+// links still sharing content.
 func tree(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error { // Walk uses Lstat
 		if err != nil || p == dir {
 			return err
 		}
 		rel, _ := filepath.Rel(dir, p)
-		if info.IsDir() {
-			out[rel] = "/"
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			target, err := os.Readlink(p)
+			out[rel] = "symlink -> " + target
+			return err
+		case info.IsDir():
+			out[rel] = fmt.Sprintf("dir %v", info.Mode().Perm())
 			return nil
 		}
 		b, err := os.ReadFile(p)
-		out[rel] = string(b)
+		out[rel] = fmt.Sprintf("file %v\n%s", info.Mode().Perm(), b)
 		return err
 	})
 	if err != nil {
@@ -336,6 +344,45 @@ func TestCLIMatchesPython(t *testing.T) {
 		cliCase{group: "D1 naming", argv: []string{"rotate", "90", "dir.v2/photo"}, setup: errSet, compat: "D1"},
 		cliCase{group: "D1 naming", argv: []string{"rotate", "90", ".hidden"}, setup: errSet, compat: "D1"},
 	)
+
+	// 5. D3: Go's atomic write must leave the same tree as Python's
+	//    in-place open('wb') - through symlinks, keeping modes, failing on
+	//    read-only outputs and directories, keeping hard links shared.
+	r1 := mustApply(t, fixtures[0].data, 1)
+	d3Set := func(t *testing.T, dir string) {
+		files(map[string][]byte{"in.heic": fixtures[0].data, "r.heic": r1, "target.heic": []byte("old target"),
+			"m640.heic": []byte("old"), "ro.heic": []byte("old"), "hl.heic": []byte("old"), "rodir": nil})(t, dir)
+		must := func(err error) {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		must(os.Symlink("target.heic", filepath.Join(dir, "link.heic")))
+		must(os.Symlink("missing_target.heic", filepath.Join(dir, "dangling.heic")))
+		must(os.Symlink("loop2", filepath.Join(dir, "loop1")))
+		must(os.Symlink("loop1", filepath.Join(dir, "loop2")))
+		must(os.Link(filepath.Join(dir, "hl.heic"), filepath.Join(dir, "hl2.heic")))
+		must(os.Chmod(filepath.Join(dir, "m640.heic"), 0o640))
+		must(os.Chmod(filepath.Join(dir, "ro.heic"), 0o444))
+		must(os.Chmod(filepath.Join(dir, "rodir"), 0o555))
+		t.Cleanup(func() { os.Chmod(filepath.Join(dir, "rodir"), 0o755) })
+	}
+	for _, argv := range [][]string{
+		{"rotate", "90", "in.heic", "link.heic", "-f"},
+		{"rotate", "90", "in.heic", "link.heic"},
+		{"rotate", "90", "in.heic", "dangling.heic"},
+		{"rotate", "90", "in.heic", "loop1"},
+		{"rotate", "90", "in.heic", "m640.heic", "-f"},
+		{"rotate", "90", "in.heic", "hl.heic", "-f"},
+		{"rotate", "90", "in.heic", "rodir/out.heic"},
+		{"reverse", "r.heic", "link.heic", "-f"},
+		{"rotate", "90", "link.heic", "link.heic", "-f"},
+	} {
+		add("D3 writes", d3Set, argv...)
+	}
+	if os.Geteuid() != 0 { // root can write read-only files
+		add("D3 writes", d3Set, "rotate", "90", "in.heic", "ro.heic", "-f")
+	}
 
 	// Run Python for every case in one driver process, then Go.
 	root := t.TempDir()
