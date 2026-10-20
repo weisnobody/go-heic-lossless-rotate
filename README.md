@@ -27,6 +27,9 @@ It has no dependencies outside the Go standard library.
 > re-encoding, and no quality loss, happens no matter how many times you
 > rotate.
 
+Why in Go?  Was building a tool (in Go) to be able to fix rotation on images and was trying to make the tool easy to install / use.  The Python requirement was not something I felt the non-technical people that might use the tool would have on hand.
+
+
 ## Contents
 
 - [What it does](#what-it-does)
@@ -346,5 +349,5 @@ The directory's contents are gitignored.
 
 ## License
 
-MIT. See [LICENSE](LICENSE). Portions are derived from heic-lossless-rotate,
+MIT. See [LICENSE](LICENSE). Portions are derived from [heic-lossless-rotate](https://github.com/olegoz/heic-lossless-rotate),
 Copyright (c) 2026 Oleg Ostrozhansky.
