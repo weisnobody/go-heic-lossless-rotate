@@ -27,6 +27,7 @@ import (
 	"syscall"
 
 	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/stream"
 )
 
 // FileOptions are RotateFile's and ReverseFile's options - the CLI's flags.
@@ -63,8 +64,8 @@ func (e *OutputExistsError) Is(target error) bool { return target == fs.ErrExist
 
 // verifyReversibleHook is RotateFile's post-rotate self-check, indirected so
 // tests can force a failure (upstream patches cli.verify_reversible).
-var verifyReversibleHook = func(out *View) error {
-	return VerifyReversibleReaderAt(out, out.Size(), core.ReverseOptions{})
+var verifyReversibleHook = func(out *stream.View) error {
+	return stream.VerifyReversibleReaderAt(out, out.Size(), core.ReverseOptions{})
 }
 
 // logger writes the CLI's stdout lines; a nil writer is silent.
@@ -118,11 +119,11 @@ func RotateFile(input, output string, deltaTurns int, opts FileOptions) (*Result
 	}
 	defer in.close()
 	log := logger{opts.Log}
-	out, err := ApplyRotationReaderAt(in.r, in.size, deltaTurns, core.RotateOptions{NoExifSync: opts.NoExifSync, Log: opts.Log})
+	out, err := stream.ApplyRotationReaderAt(in.r, in.size, deltaTurns, core.RotateOptions{NoExifSync: opts.NoExifSync, Log: opts.Log})
 	if err != nil {
 		return nil, err
 	}
-	if err := verifyStructureView(out); err != nil {
+	if err := stream.VerifyStructureView(out); err != nil {
 		return nil, err
 	}
 	log.printf("[ok] output box structure is internally consistent")
@@ -157,11 +158,11 @@ func ReverseFile(input, output string, opts FileOptions) (*Result, error) {
 	}
 	defer in.close()
 	log := logger{opts.Log}
-	out, err := ReverseRotationReaderAt(in.r, in.size, core.ReverseOptions{IgnoreTamper: opts.IgnoreTamper, Log: opts.Log})
+	out, err := stream.ReverseRotationReaderAt(in.r, in.size, core.ReverseOptions{IgnoreTamper: opts.IgnoreTamper, Log: opts.Log})
 	if err != nil {
 		return nil, err
 	}
-	if err := verifyStructureView(out); err != nil {
+	if err := stream.VerifyStructureView(out); err != nil {
 		return nil, err
 	}
 	log.printf("[ok] output box structure is internally consistent")
@@ -178,7 +179,7 @@ func InfoFile(path string) (*core.Info, error) {
 		return nil, err
 	}
 	defer in.close()
-	return GatherInfoReaderAt(in.r, in.size)
+	return stream.GatherInfoReaderAt(in.r, in.size)
 }
 
 // errorMessage is Python's str(e) for this package's error types.
@@ -195,7 +196,7 @@ func errorMessage(err error) string {
 }
 
 // finishWrite is _run's shared tail: overwrite refusal, dry-run, write.
-func finishWrite(cmd, output string, out *View, in *input, opts FileOptions) (*Result, error) {
+func finishWrite(cmd, output string, out *stream.View, in *input, opts FileOptions) (*Result, error) {
 	log := logger{opts.Log}
 	size, inputSize := int(out.Size()), int(in.size)
 	if _, err := os.Stat(output); err == nil && !opts.Force { // os.path.exists
@@ -290,7 +291,7 @@ func resolveSymlinks(path string) (string, error) {
 // open(path, 'wb') semantics for everything visible (see the file comment).
 // out may read from in, which is closed before anything replaces or
 // overwrites a file (Windows can't rename over an open file).
-func writeOutput(path string, out *View, in *input) error {
+func writeOutput(path string, out *stream.View, in *input) error {
 	target, err := resolveSymlinks(path)
 	if err != nil {
 		return err
@@ -315,7 +316,7 @@ func writeOutput(path string, out *View, in *input) error {
 				if err != nil {
 					return err
 				}
-				out = viewOfBytes(data)
+				out = stream.ViewOfBytes(data)
 				in.close() // nothing reads from it now; release it before writing
 			}
 			return writeInPlace(target, path, out)
@@ -369,7 +370,7 @@ func writeOutput(path string, out *View, in *input) error {
 
 // writeInPlace is Python's exact open(path, 'wb') semantics, used for a
 // hard-linked target so its other links see the new content.
-func writeInPlace(target, path string, out *View) error {
+func writeInPlace(target, path string, out *stream.View) error {
 	f, err := os.OpenFile(target, os.O_WRONLY|os.O_TRUNC, 0o666)
 	if err != nil {
 		return asOpenError(err, path)

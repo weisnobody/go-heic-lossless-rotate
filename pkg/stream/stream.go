@@ -1,13 +1,11 @@
-package heicrotate
-
-// Streaming engine (Go-only): rotate, reverse, verify, and info over an
-// io.ReaderAt without holding the image data in memory.
+// Package stream is the streaming engine (Go-only): rotate, reverse, verify,
+// and info over an io.ReaderAt without holding the image data in memory.
 //
 // Every edit falls inside the meta+provenance span [meta_start, prov_end)
 // plus at most one 2-byte Exif patch (upstream's reverse_rotation docstring
 // makes this argument; it holds for apply too). So the engine loads only
 // that span and runs the SAME orchestration as the []byte engine on it -
-// applyRotation / prepareReversalEnv in core.go - through a fileEnv that
+// core.ApplyRotationEnv / core.PrepareReversalEnv - through a core.FileEnv that
 // reads everything else (the Exif blob, CRCs) on demand. Results are
 // Views: the input with a few ranges replaced, never copied wholesale.
 //
@@ -19,6 +17,7 @@ package heicrotate
 // mine": it falls back to reading the whole input and running the []byte
 // engine, which gives the authoritative result. Well-formed files stream;
 // malformed or unusual ones cost what they always did (~2x the file).
+package stream
 
 import (
 	"bytes"
@@ -85,8 +84,8 @@ func newView(r io.ReaderAt, segs []segment) *View {
 	return v
 }
 
-// viewOfBytes wraps an in-memory result (the []byte engine's).
-func viewOfBytes(b []byte) *View { return newView(nil, []segment{{lit: b}}) }
+// ViewOfBytes wraps an in-memory result (the []byte engine's).
+func ViewOfBytes(b []byte) *View { return newView(nil, []segment{{lit: b}}) }
 
 // Size is the View's length in bytes.
 func (v *View) Size() int64 { return v.size }
@@ -94,7 +93,7 @@ func (v *View) Size() int64 { return v.size }
 // ReadAt implements io.ReaderAt.
 func (v *View) ReadAt(p []byte, off int64) (int, error) {
 	if off < 0 {
-		return 0, errors.New("heicrotate.View.ReadAt: negative offset")
+		return 0, errors.New("stream.View.ReadAt: negative offset")
 	}
 	n := 0
 	i := sort.Search(len(v.starts), func(i int) bool { return v.starts[i] > off }) - 1
@@ -401,7 +400,7 @@ func checkExtentsOutside(in *streamInput) error {
 }
 
 // ---------------------------------------------------------------------------
-// The streaming fileEnv
+// The streaming FileEnv
 // ---------------------------------------------------------------------------
 
 // patch replaces input bytes [off, off+len(b)) in the output.
@@ -410,7 +409,7 @@ type patch struct {
 	b   []byte
 }
 
-// streamEnv is the fileEnv for an edit of the span: the edited buffer is
+// streamEnv is the core.FileEnv for an edit of the span: the edited buffer is
 // the span (or the output span derived from it), and the rest of the file -
 // before metaStart and from spanEnd - is read from in.r. Output-side Exif
 // patches are kept in input offsets, so they stay put as the span resizes.
@@ -538,7 +537,7 @@ func (e *streamEnv) WriteExif(out []byte, field core.ExifOrientationField, value
 // readAll reads the whole input, for the []byte engine fallback.
 func readAll(r io.ReaderAt, size int64) ([]byte, error) {
 	if size < 0 || size > math.MaxInt {
-		return nil, errors.New("heicrotate: input too large for this platform")
+		return nil, errors.New("stream: input too large for this platform")
 	}
 	data := make([]byte, size)
 	if _, err := r.ReadAt(data, 0); err != nil && !errors.Is(err, io.EOF) {
@@ -602,7 +601,7 @@ func ApplyRotationReaderAt(r io.ReaderAt, size int64, deltaTurns int, opts core.
 	if err != nil {
 		return nil, err
 	}
-	return viewOfBytes(out), nil
+	return ViewOfBytes(out), nil
 }
 
 // reverseStream runs prepareReversalEnv on the span; a non-nil error other
@@ -659,7 +658,7 @@ func ReverseRotationReaderAt(r io.ReaderAt, size int64, opts core.ReverseOptions
 	if err != nil {
 		return nil, err
 	}
-	return viewOfBytes(out), nil
+	return ViewOfBytes(out), nil
 }
 
 // VerifyReversibleReaderAt is VerifyReversible over an io.ReaderAt.
@@ -717,10 +716,10 @@ func GatherInfoReaderAt(r io.ReaderAt, size int64) (*core.Info, error) {
 	return core.GatherInfo(data)
 }
 
-// verifyStructureView is VerifyStructure over a View: the prechecks include
+// VerifyStructureView is core.VerifyStructure over a View: the prechecks include
 // VerifyStructure of the span and exact tiling of the top level, which
 // together imply it for the whole file; otherwise check the bytes.
-func verifyStructureView(v *View) error {
+func VerifyStructureView(v *View) error {
 	if len(v.segs) != 1 || v.segs[0].lit == nil {
 		if _, err := loadStreamInput(v, v.size); err == nil {
 			return nil

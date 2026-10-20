@@ -11,11 +11,13 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
 	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/stream"
 )
 
 func writeSynth(t *testing.T, path string, mutate func(*synth.Options)) []byte {
@@ -192,7 +194,7 @@ func TestRotateFileSelfCheckAbortsAndWritesNothingOnFailure(t *testing.T) {
 	writeSynth(t, in, nil)
 	real := verifyReversibleHook
 	t.Cleanup(func() { verifyReversibleHook = real })
-	verifyReversibleHook = func(*View) error { return &core.ProvenanceError{Msg: "simulated failure"} }
+	verifyReversibleHook = func(*stream.View) error { return &core.ProvenanceError{Msg: "simulated failure"} }
 
 	_, err := RotateFile(in, out, 1, FileOptions{})
 	var pe *core.ProvenanceError
@@ -413,5 +415,66 @@ func TestWriteLeavesNoTempFiles(t *testing.T) {
 	}
 	if temps := leftoverTemps(t, dir); len(temps) > 0 {
 		t.Errorf("temp files left behind: %v", temps)
+	}
+}
+
+func TestRotateFileSameFileHardLinked(t *testing.T) {
+	// Input == output, and the target is hard-linked: the in-place write
+	// must not overwrite bytes the streaming engine is still reading.
+	dir := t.TempDir()
+	path, other := filepath.Join(dir, "photo.heic"), filepath.Join(dir, "link.heic")
+	original := writeSynth(t, path, func(o *synth.Options) {
+		o.Layout, o.IncludeExif, o.MdatPayload = synth.MetaFirst, true, tests.CyclicPayload(256<<10)
+	})
+	if err := os.Link(path, other); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if _, err := RotateFile(path, path, 1, FileOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	want := tests.MustApply(t, original, 1)
+	if !bytes.Equal(mustRead(t, path), want) || !bytes.Equal(mustRead(t, other), want) {
+		t.Error("in-place rotate of a hard-linked file corrupted it or broke the link")
+	}
+	if _, err := ReverseFile(path, path, FileOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(mustRead(t, other), original) {
+		t.Error("in-place reverse of a hard-linked file didn't restore the original")
+	}
+}
+
+func TestFileAPIHeapBound(t *testing.T) {
+	if tests.RaceEnabled || testing.Short() {
+		t.Skip("allocation counts are inflated under -race; large file")
+	}
+	const payload = 64 << 20
+	for _, layout := range []synth.Layout{synth.MdatFirst, synth.MetaFirst} {
+		t.Run(string(layout), func(t *testing.T) {
+			dir := t.TempDir()
+			in, rotated, restored := filepath.Join(dir, "in.heic"), filepath.Join(dir, "r.heic"), filepath.Join(dir, "back.heic")
+			writeSynth(t, in, func(o *synth.Options) {
+				o.Layout, o.IncludeExif, o.ExifPosition, o.MdatPayload = layout, true, synth.ExifMiddle, tests.CyclicPayload(payload)
+			})
+			start := time.Now()
+			rot := tests.AllocatedBytes(func() {
+				if _, err := RotateFile(in, rotated, 1, FileOptions{}); err != nil {
+					t.Fatal(err)
+				}
+			})
+			rotTime := time.Since(start)
+			rev := tests.AllocatedBytes(func() {
+				if _, err := ReverseFile(rotated, restored, FileOptions{}); err != nil {
+					t.Fatal(err)
+				}
+			})
+			t.Logf("64 MiB: rotate allocated %d bytes in %v, reverse %d bytes", rot, rotTime, rev)
+			if rot > 2<<20 || rev > 2<<20 {
+				t.Errorf("heap growth over 2 MiB: rotate %d, reverse %d", rot, rev)
+			}
+			if !bytes.Equal(mustRead(t, in), mustRead(t, restored)) {
+				t.Error("round trip through the streaming file API isn't byte-identical")
+			}
+		})
 	}
 }
