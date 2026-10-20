@@ -15,6 +15,7 @@ import (
 
 	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
 // runCLI mirrors upstream's run_cli: returns (returncode, stdout, stderr).
@@ -81,7 +82,7 @@ func TestCLI(t *testing.T) {
 			if rc != 0 {
 				t.Fatalf("%s: rc %d: %s", flag, rc, err)
 			}
-			want := []string{heicrotate.Version, fmt.Sprint(heicrotate.FormatVersion)}
+			want := []string{version.Version, fmt.Sprint(heicrotate.FormatVersion)}
 			for _, v := range heicrotate.SupportedReverseFormatVersions {
 				want = append(want, fmt.Sprint(v))
 			}
@@ -145,7 +146,7 @@ func TestCLI(t *testing.T) {
 			t.Fatal(err)
 		}
 		rc, out, err := runCLI("info", outPath)
-		if rc != 1 || !strings.Contains(out, "heic-lossless-rotate v"+heicrotate.Version+", provenance format") {
+		if rc != 1 || !strings.Contains(out, "heic-lossless-rotate v"+version.Version+", provenance format") {
 			t.Errorf("rc %d, stdout %q, stderr %q", rc, out, err)
 		}
 	})
@@ -352,7 +353,7 @@ func TestDryRunSizeReport(t *testing.T) {
 func TestGoVersionFlag(t *testing.T) {
 	for _, flag := range []string{"-G", "--goversion", "--gov"} {
 		rc, out, err := runCLI(flag)
-		if rc != 0 || out != heicrotate.GoVersionString()+"\n" || err != "" {
+		if rc != 0 || out != version.GoVersionString()+"\n" || err != "" {
 			t.Errorf("%s: rc %d, stdout %q, stderr %q", flag, rc, out, err)
 		}
 	}

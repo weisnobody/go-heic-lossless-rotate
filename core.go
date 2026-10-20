@@ -33,6 +33,7 @@ import (
 
 	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
 	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
 // BoxParseError reports malformed or unsupported container structure
@@ -79,15 +80,15 @@ var SupportedReverseFormatVersions = []int{1, 2}
 // every edit as a same-size splice, the same way CCRC already does
 // (← _version_tuple).
 func versionTuple() ([3]uint8, error) {
-	parts := strings.Split(Version, ".")
+	parts := strings.Split(version.Version, ".")
 	if len(parts) != 3 {
-		return [3]uint8{}, fmt.Errorf("VERSION must be MAJOR.MINOR.PATCH, got %q", Version)
+		return [3]uint8{}, fmt.Errorf("VERSION must be MAJOR.MINOR.PATCH, got %q", version.Version)
 	}
 	var out [3]uint8
 	for i, name := range []string{"major", "minor", "patch"} {
 		v, err := strconv.Atoi(parts[i])
 		if err != nil {
-			return [3]uint8{}, fmt.Errorf("VERSION must be MAJOR.MINOR.PATCH, got %q", Version)
+			return [3]uint8{}, fmt.Errorf("VERSION must be MAJOR.MINOR.PATCH, got %q", version.Version)
 		}
 		if v < 0 || v > 255 {
 			return [3]uint8{}, fmt.Errorf("VERSION component %s=%d doesn't fit in the "+
@@ -2462,7 +2463,7 @@ func VersionString() string {
 	for i, v := range SupportedReverseFormatVersions {
 		supported[i] = strconv.Itoa(v)
 	}
-	return "heic-lossless-rotate " + Version + "\n" +
+	return "heic-lossless-rotate " + version.Version + "\n" +
 		"metadata (provenance) format version: " + strconv.Itoa(FormatVersion) + "\n" +
 		"metadata format versions supported by reverse: " + strings.Join(supported, ", ")
 }

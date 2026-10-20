@@ -1,4 +1,4 @@
-package heicrotate
+package version
 
 import (
 	"regexp"

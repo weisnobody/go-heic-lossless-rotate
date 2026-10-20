@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
 func TestProvenanceUUIDDerivation(t *testing.T) {
@@ -28,8 +30,8 @@ func TestVersionTuple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := fmt.Sprintf("%d.%d.%d", got[0], got[1], got[2]); s != Version {
-		t.Errorf("versionTuple() = %v, want %s", got, Version)
+	if s := fmt.Sprintf("%d.%d.%d", got[0], got[1], got[2]); s != version.Version {
+		t.Errorf("versionTuple() = %v, want %s", got, version.Version)
 	}
 }
 

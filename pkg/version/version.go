@@ -1,4 +1,6 @@
-package heicrotate
+// Package version holds the upstream version this port implements and the Go
+// port's own release version.
+package version
 
 import (
 	"runtime"

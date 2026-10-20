@@ -15,6 +15,7 @@ import (
 
 	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
 // buildParser builds the argument parser (← build_parser). Shared flags are
@@ -157,7 +158,7 @@ func buildParser(prog string) *parser {
 		},
 		subcommands: []*parser{rotate, reverse, info},
 		version:     heicrotate.VersionString,
-		goVersion:   heicrotate.GoVersionString,
+		goVersion:   version.GoVersionString,
 	}
 }
 

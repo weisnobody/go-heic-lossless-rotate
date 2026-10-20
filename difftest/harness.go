@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	heicrotate "github.com/pjg/go-heic-lossless-rotate"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
 // Py is a verified handle on the pinned upstream Python implementation.
@@ -73,12 +74,12 @@ func locateUpstream() (*Py, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: can't determine version: %v", python, err)
 	}
-	version := strings.TrimSpace(string(out))
-	if !atLeast(version, 3, 11) {
-		return nil, fmt.Errorf("%s is Python %s; difftest needs >= 3.11 (for -P)", python, version)
+	pyVersion := strings.TrimSpace(string(out))
+	if !atLeast(pyVersion, 3, 11) {
+		return nil, fmt.Errorf("%s is Python %s; difftest needs >= 3.11 (for -P)", python, pyVersion)
 	}
 
-	py := &Py{Python: python, Version: version, Src: src}
+	py := &Py{Python: python, Version: pyVersion, Src: src}
 
 	pinned, err := os.ReadFile("upstream.commit")
 	if err != nil {
@@ -106,8 +107,8 @@ func locateUpstream() (*Py, error) {
 			return nil, fmt.Errorf("upstream checkout %s is at %s, pinned commit is %s (run `make upstream`, "+
 				"or set HEIC_ROTATE_PY_ALLOW_UNPINNED=1)", src, py.Commit, want)
 		}
-		if upstreamVersion != heicrotate.Version {
-			return nil, fmt.Errorf("upstream VERSION is %s but heicrotate.Version is %s", upstreamVersion, heicrotate.Version)
+		if upstreamVersion != version.Version {
+			return nil, fmt.Errorf("upstream VERSION is %s but version.Version is %s", upstreamVersion, version.Version)
 		}
 	}
 	return py, nil

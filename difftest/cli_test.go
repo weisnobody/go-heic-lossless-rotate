@@ -27,6 +27,7 @@ import (
 	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/cli"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
 type cliCase struct {
@@ -118,7 +119,7 @@ func files(fs map[string][]byte) func(*testing.T, string) {
 func compareCLI(c cliCase, py, gor cliOutcome, pyTree, goTree map[string]string) string {
 	switch c.compat {
 	case "E1":
-		if py.Code != 2 || gor.Code != 0 || gor.Stdout != heicrotate.GoVersionString()+"\n" {
+		if py.Code != 2 || gor.Code != 0 || gor.Stdout != version.GoVersionString()+"\n" {
 			return fmt.Sprintf("E1: python exit %d, go exit %d stdout %q", py.Code, gor.Code, gor.Stdout)
 		}
 		return ""

@@ -9,6 +9,7 @@ import (
 
 	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
 // TestBinaries builds both commands and runs them as real processes.
@@ -46,7 +47,7 @@ func TestBinaries(t *testing.T) {
 		if rc, out := run(name, "-V"); rc != 0 || out != heicrotate.VersionString()+"\n" {
 			t.Errorf("%s -V: rc %d, %q", name, rc, out)
 		}
-		if rc, out := run(name, "-G"); rc != 0 || out != heicrotate.GoVersionString()+"\n" {
+		if rc, out := run(name, "-G"); rc != 0 || out != version.GoVersionString()+"\n" {
 			t.Errorf("%s -G: rc %d, %q", name, rc, out)
 		}
 		if rc, _ := run(name); rc != 2 {

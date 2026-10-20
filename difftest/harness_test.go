@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	heicrotate "github.com/pjg/go-heic-lossless-rotate"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
 func TestUpstreamPinned(t *testing.T) {
@@ -22,7 +22,7 @@ func TestPythonCLISmoke(t *testing.T) {
 		t.Fatalf("python -V exited %d\nstderr: %s", r.Code, r.Stderr)
 	}
 	first, _, _ := strings.Cut(string(r.Stdout), "\n")
-	if want := "heic-lossless-rotate " + heicrotate.Version; first != want {
+	if want := "heic-lossless-rotate " + version.Version; first != want {
 		t.Errorf("python -V first line = %q, want %q", first, want)
 	}
 }
