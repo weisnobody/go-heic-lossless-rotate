@@ -103,20 +103,24 @@ measured against the real upstream tool from day one.
       [plans/2026-10-19-implementation-phase-4.md](plans/2026-10-19-implementation-phase-4.md).
 
 ### Phase 5: Streaming engine (`stream.go`)
-- [ ] Spliced view (`io.ReaderAt` over input ranges plus literal segments) and
+- [x] Spliced view (`io.ReaderAt` over input ranges plus literal segments) and
       a streaming CRC32 over views
-- [ ] `ApplyRotationReaderAt(r io.ReaderAt, size int64, deltaTurns int, opts)
+- [x] `ApplyRotationReaderAt(r io.ReaderAt, size int64, deltaTurns int, opts)
       (*View, error)`, `ReverseRotationReaderAt(...)`, `VerifyReversibleReaderAt`,
       `GatherInfoReaderAt`. `View` exposes `Size()`, `ReadAt`, and `WriteTo(io.Writer)`.
-- [ ] Cross-check test: the stream engine equals the `[]byte` engine over the whole
+- [x] Cross-check test: the stream engine equals the `[]byte` engine over the whole
       corpus (all synth variants, multi-edit chains, v1 records, tamper
       cases, mid-stream Exif, extra mdat, testdata/)
-- [ ] Heap-bound test: rotating and reversing a 64 MiB synthetic stays under
+- [x] Heap-bound test: rotating and reversing a 64 MiB synthetic stays under
       2 MiB of heap growth
-- [ ] **Go/No-Go gate:** the cross-check is green and the heap bound is met, so
+- [x] **Go/No-Go gate:** the cross-check is green and the heap bound is met, so
       `file.go` (and therefore the CLI) switches to the streaming engine. If not, ship
       with the `[]byte` engine behind the file API and keep stream.go
       unexported until it passes.
+- [x] Result (2026-10-19): Go. The cross-check over 17,569 inputs is identical, and every successful operation on
+      a well-formed file streams. A 64 MiB rotate allocates about 0.7 MB in about 170 ms. Both Python gates are green
+      through the streaming file API. See
+      [plans/2026-10-19-implementation-phase-5.md](plans/2026-10-19-implementation-phase-5.md).
 
 ### Phase 6: Release
 - [ ] Verify the mirror delivers tags: push a throwaway tag to arena, confirm it appears

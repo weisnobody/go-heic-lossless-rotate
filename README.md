@@ -8,9 +8,14 @@ CLI (same commands, flags, messages, and exit codes, and byte-identical output
 files) and as an **importable Go library** whose functions mirror the
 Python source one to one. It has no dependencies outside the Go standard library.
 
-> **Status: pre-release.** The library core, the file API, and the CLI are
-> complete and verified against the Python tool (see [docs/PLAN.md](docs/PLAN.md)).
-> Still to come: the low-memory streaming engine and release binaries.
+> **Status: pre-release.** The library core, the file API, the streaming engine,
+> and the CLI are complete and verified against the Python tool (see
+> [docs/PLAN.md](docs/PLAN.md)). Still to come: release binaries.
+
+Memory: files are streamed. Only the `meta` and provenance boxes (typically a
+few KB) are held in memory, so rotating a 64 MiB file allocates under 1 MB.
+Malformed or unusual files fall back to an in-memory path that gives the
+identical result.
 
 ## Usage
 
@@ -38,6 +43,10 @@ import heicrotate "github.com/pjg/go-heic-lossless-rotate"
 res, err := heicrotate.RotateFile("photo.heic", "", 1, heicrotate.FileOptions{}) // 1 quarter turn CCW
 info, err := heicrotate.InfoFile(res.Output)       // *info.DeltaQuarterTurns == 1
 _, err = heicrotate.ReverseFile(res.Output, "", heicrotate.FileOptions{})
+
+// Streams: any io.ReaderAt, result as a View (io.ReaderAt + io.WriterTo).
+view, err := heicrotate.ApplyRotationReaderAt(f, size, 1, heicrotate.RotateOptions{})
+_, err = view.WriteTo(w)
 
 // Bytes: the 1:1 port of upstream's core.py.
 rotated, err := heicrotate.ApplyRotation(data, 3, heicrotate.RotateOptions{}) // 270 CCW = 90 CW

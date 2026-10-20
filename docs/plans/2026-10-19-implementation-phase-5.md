@@ -1,7 +1,15 @@
 # Plan: Phase 5: Streaming / Low-Memory Engine
 
 - **Date:** 2026-10-19
-- **Status:** Approved
+- **Status:** Implemented 2026-10-19 (Go/No-Go: **Go**). Deviations from this plan:
+  - Instead of mirroring `ApplyRotation`'s orchestration in `stream.go`, `core.go`'s orchestration was
+    routed through a six-operation `fileEnv` (review point 2's "small extractions", taken further), so
+    both engines run one orchestration and can't drift. The core gate was unchanged by it.
+  - The Exif blob cap is 1 MiB, not 64 KiB, because Exif items with thumbnails can exceed 64 KiB.
+  - A boundary bug (an Exif blob ending exactly at `meta_start` counted as touching the span) made
+    `mdat_first` files with Exif fall back. The smoke test found it, and it's fixed.
+  - The cross-check counts only fallbacks on operations that *succeed*. Erroring operations fall back by
+    design, to give the exact error.
 - **Covers:** [PLAN.md](../PLAN.md) Phase 5 (Streaming engine)
 - **Upstream pin:** heic-lossless-rotate v1.7.1, commit `70d6c73`
 - **Branch:** `feat/phase-5-streaming` (from `dev`)

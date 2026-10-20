@@ -225,34 +225,42 @@ differences that make a helper mandatory:
 - **Trade-offs:** `go install @latest` can lag behind Go-only fixes until
   the next upstream version bump.
 
-### 1:1 core plus a separate streaming engine
-- **Choice:** `core.go` mirrors `core.py` exactly on `[]byte`. `stream.go` is
-  an additional engine, not a rewrite of core.
-- **Reasoning:** Keeping core 1:1 makes porting future upstream releases a
-  diff-and-translate job. Upstream itself plans a streaming refactor, and
-  when it lands we can re-evaluate whether to align `stream.go` with it.
-- **How streaming works.** Every edit falls inside the
-  contiguous span `[meta_start, prov_end)` plus at most one 2-byte Exif
-  patch. Upstream's `reverse_rotation` docstring makes this argument
-  itself, and it holds for apply as well. So:
-  1. Walk top-level headers via `ReadAt` (8–16 bytes each).
-  2. Load only `meta` plus the adjacent provenance box into memory.
-  3. Run core's parsers and builders on that span, translating absolute
-     `iloc` thresholds and Exif offsets by `meta_start`.
-  4. Read the Exif TIFF blob via `ReadAt`, at its `iloc` location and bounded by its extent length.
-  5. Represent the output as a **spliced view**: an `io.ReaderAt` of
-     segments (input ranges plus literal replacement bytes). PCRC, CCRC, the
-     reversibility self-check, and the final write all stream over views,
-     and nothing proportional to `mdat` is ever allocated.
-- **Trade-offs:** About four sequential read passes per rotate (PCRC,
-  CCRC, self-check, write) instead of one load. That's acceptable because the
-  page cache absorbs it. The two engines could drift apart; `stream_test.go`
-  asserts byte equality between them across the entire test corpus.
+### One orchestration, two engines (streaming)
+- **Choice:** `core.go` keeps `core.py`'s functions and order. `ApplyRotation` and `prepareReversal`
+  reach anything outside the buffer they edit through a small unexported `fileEnv` with six
+  operations: the Exif lookup on input and output, the Exif write, PCRC, CCRC on input and output, and the
+  base file offset. `memEnv` (the `[]byte` engine) has the whole file in the buffer. `streamEnv`
+  (`stream.go`) edits only the meta+provenance span and reads the rest through an `io.ReaderAt`.
+  Both engines run the same orchestration, so they can't drift. Reverse shares
+  `reconstructedPlan`, the chunk sequence that `iterReconstructedChunks` walks and the streaming engine turns into a
+  `View`.
+- **Why the span is enough:** every edit falls inside `[meta_start, prov_end)` plus at most one 2-byte
+  Exif patch, an argument upstream's `reverse_rotation` docstring makes itself.
+- **Exactness by prechecks plus fallback:** the core's parsers, like upstream's, read past box ends.
+  Inside the span that sees the same bytes as the whole file; past the span's end it wouldn't. So
+  `loadStreamInput` streams only when:
+  - the top level tiles the file exactly, with one `meta` box (32-bit header) and the first provenance box, if any, right after it
+  - the span passes `VerifyStructure`
+  - the boxes read at fixed offsets (`pitm`, `infe`, `irot`, provenance) are big enough
+  - no absolute-offset iloc extent points into the span
+
+  Under those conditions every read stays in the span or ends in an error. **Any failed precheck, and
+  any error, falls back** to reading the whole input and running the `[]byte` engine, which gives the authoritative result.
+  The one exception is `no provenance record` on reverse, which is exact without the full input. Output-side Exif patches are kept in
+  input offsets, so they survive later span resizes. The Exif blob is read via `ReadAt`, capped at 1 MiB, and a larger blob falls back.
+- **Memory:** O(meta) for well-formed files. Rotating a 64 MiB file allocates about 0.7 MB in about 170 ms,
+  and reverse about 0.45 MB, against about 2× the file before. Malformed or unusual files (64-bit or to-EOF `meta`, over-64-bit
+  iloc values, corruption) fall back and cost what they always did.
+- **Trade-offs:** a rotate makes about 4–5 sequential passes over the input (PCRC, CCRC, the self-check's two CRCs,
+  the write), which the page cache absorbs. `stream_test.go` cross-checks both engines over 17,569 inputs,
+  including a corruption sweep, and requires every successful operation on a well-formed file to stream.
 
 ### File API (`file.go`)
 - **Choice:** `RotateFile`/`ReverseFile` are the rotate and reverse halves of `cli.py`'s `_run`. They
-  read the input, then run the core, `VerifyStructure`, and (for rotate) the post-rotate self-check through
-  `verifyReversibleHook`. After that they apply default naming (D1) and the overwrite refusal
+  open the input as an `*os.File` and run the streaming engine. A non-regular input is read into memory. Then come
+  the structure check and (for rotate) the post-rotate self-check through `verifyReversibleHook`, both on the `View`,
+  which is then streamed into the atomic temp file. The input is closed before the rename, and when the
+  in-place hard-link path would overwrite the input itself, the `View` is materialized first. After that they apply default naming (D1) and the overwrite refusal
   (`*OutputExistsError`, `errors.Is(err, fs.ErrExist)`), then dry-run or write. Every `[ok]`/`[dry-run]`
   line goes through `FileOptions.Log`. `cli.run` only maps flags onto them. `InfoFile` reads the file and calls `GatherInfo`.
 - **Reasoning:** library callers get the CLI's safety checks, and the write path has a single
