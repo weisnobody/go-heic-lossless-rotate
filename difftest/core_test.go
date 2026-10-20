@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	heicrotate "github.com/pjg/go-heic-lossless-rotate"
+	"github.com/pjg/go-heic-lossless-rotate/internal/craft"
 	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
 )
@@ -325,8 +326,8 @@ func TestCoreMatchesPython(t *testing.T) {
 	}
 
 	// Crafted structures synth can't produce.
-	for _, name := range sortedKeys(craftVariants()) {
-		data := craft(craftVariants()[name])
+	for _, name := range sortedKeys(craft.Variants()) {
+		data := craft.Build(craft.Variants()[name])
 		c.addAllOps("crafted", data)
 		if rot, err := heicrotate.ApplyRotation(data, 1, heicrotate.RotateOptions{}); err == nil {
 			c.addAllOps("crafted rotated", rot)
@@ -387,8 +388,8 @@ func TestCoreMatchesPython(t *testing.T) {
 			_ = name
 		}
 	}
-	wideOpts := craftVariants()["mdat_first/wide_high_assoc"]
-	wideRot := mustApply(t, craft(wideOpts), 1)
+	wideOpts := craft.Variants()["mdat_first/wide_high_assoc"]
+	wideRot := mustApply(t, craft.Build(wideOpts), 1)
 	c.addAllOps("provenance edits", editProvenance(t, wideRot, func(_ *uint8, e heicrotate.ProvenanceEntries) {
 		e["OIPF"] = []byte{0, 0, 0}
 	}))
@@ -405,7 +406,7 @@ func TestCoreMatchesPython(t *testing.T) {
 		s, _ := heicrotate.LocateStructures(base)
 		m := s.MetaHdr
 		inner := bytes.Join([][]byte{base[m.ContentStart:m.ContentEnd], {0, 0, 0, 1, 'f', 'r', 'e', 'e'}, make([]byte, 8)}, nil)
-		withZero := bytes.Join([][]byte{base[:m.Start], cbox("meta", inner), base[m.ContentEnd:]}, nil)
+		withZero := bytes.Join([][]byte{base[:m.Start], craft.Box("meta", inner), base[m.ContentEnd:]}, nil)
 		before := len(c.cases)
 		c.addSweepOps("zero-size box", withZero)
 		for i := before; i < len(c.cases); i++ {

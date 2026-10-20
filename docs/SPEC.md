@@ -99,7 +99,8 @@ from the differential corpus.
 4. **Convenience file API:** `RotateFile`, `ReverseFile`, `InfoFile`, with the
    default output naming, overwrite refusal, dry-run, and atomic write. The CLI
    is a thin layer over these.
-5. **Streaming / low-memory engine:** an `io.ReaderAt` → `io.Writer`
+5. **Streaming / low-memory engine** (done: O(meta) memory for well-formed files, with an exact
+   fallback to the `[]byte` engine for anything else; see DESIGN.md): an `io.ReaderAt` → `io.Writer`
    variant that never holds `mdat` in memory. It must produce output
    byte-identical to the `[]byte` engine. Once it passes that gate, the
    CLI and file API switch to it.
@@ -130,7 +131,7 @@ from the differential corpus.
       variant and every file in `testdata/`.
 - [ ] Python `reverse` restores Go-rotated files to the original bytes, and
       Go `reverse` restores Python-rotated files (both directions).
-- [ ] The streaming engine's output equals the `[]byte` engine's for the
+- [x] The streaming engine's output equals the `[]byte` engine's for the
       whole corpus, and its peak heap stays flat as `mdat` grows (the
       multi-MiB fixture uses less than 2 MiB of heap).
 - [ ] The library has zero non-stdlib dependencies (`go.mod` has no

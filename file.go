@@ -15,6 +15,7 @@ package heicrotate
 // in place so its other links see the change.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -60,7 +61,36 @@ func (e *OutputExistsError) Is(target error) bool { return target == fs.ErrExist
 
 // verifyReversibleHook is RotateFile's post-rotate self-check, indirected so
 // tests can force a failure (upstream patches cli.verify_reversible).
-var verifyReversibleHook = VerifyReversible
+var verifyReversibleHook = func(out *View) error {
+	return VerifyReversibleReaderAt(out, out.Size(), ReverseOptions{})
+}
+
+// input is an opened input file for the streaming engine.
+type input struct {
+	r     io.ReaderAt
+	size  int64
+	info  fs.FileInfo // nil when the input isn't a regular file
+	close func()
+}
+
+// openInput opens path for the streaming engine. A non-regular file (a
+// pipe, a device - or a directory, which then fails exactly as Python's
+// open(path, 'rb') does) is read into memory instead.
+func openInput(path string) (*input, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	if fi, err := f.Stat(); err == nil && fi.Mode().IsRegular() {
+		return &input{r: f, size: fi.Size(), info: fi, close: func() { f.Close() }}, nil
+	}
+	f.Close()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return &input{r: bytes.NewReader(data), size: int64(len(data)), close: func() {}}, nil
+}
 
 // RotateFile rotates input by deltaTurns quarter turns COUNTER-CLOCKWISE on
 // top of its current rotation and writes the result to output (""
@@ -71,16 +101,17 @@ var verifyReversibleHook = VerifyReversible
 // exactly; a failed self-check is a *ProvenanceError and nothing is
 // written.
 func RotateFile(input, output string, deltaTurns int, opts FileOptions) (*Result, error) {
-	data, err := os.ReadFile(input)
+	in, err := openInput(input)
 	if err != nil {
 		return nil, err
 	}
+	defer in.close()
 	log := logger{opts.Log}
-	out, err := ApplyRotation(data, deltaTurns, RotateOptions{NoExifSync: opts.NoExifSync, Log: opts.Log})
+	out, err := ApplyRotationReaderAt(in.r, in.size, deltaTurns, RotateOptions{NoExifSync: opts.NoExifSync, Log: opts.Log})
 	if err != nil {
 		return nil, err
 	}
-	if err := VerifyStructure(out); err != nil {
+	if err := verifyStructureView(out); err != nil {
 		return nil, err
 	}
 	log.printf("[ok] output box structure is internally consistent")
@@ -89,7 +120,7 @@ func RotateFile(input, output string, deltaTurns int, opts FileOptions) (*Result
 	// writing anything - that reversing our own freshly-produced output
 	// reconstructs the true original, rather than producing a file this
 	// tool claims to be able to reverse but actually can't.
-	if err := verifyReversibleHook(out, ReverseOptions{}); err != nil {
+	if err := verifyReversibleHook(out); err != nil {
 		return nil, &ProvenanceError{
 			Msg: "post-rotate reversibility self-check failed - refusing " +
 				"to write output: " + errorMessage(err),
@@ -102,39 +133,41 @@ func RotateFile(input, output string, deltaTurns int, opts FileOptions) (*Result
 	if output == "" {
 		output = DefaultRotateOutput(input)
 	}
-	return finishWrite("rotate", output, out, len(data), opts)
+	return finishWrite("rotate", output, out, in, opts)
 }
 
 // ReverseFile undoes every heic-lossless-rotate edit on input, writing the
 // byte-identical original to output ("" means DefaultReverseOutput(input))
 // - the reverse half of cli.py's _run.
 func ReverseFile(input, output string, opts FileOptions) (*Result, error) {
-	data, err := os.ReadFile(input)
+	in, err := openInput(input)
 	if err != nil {
 		return nil, err
 	}
+	defer in.close()
 	log := logger{opts.Log}
-	out, err := ReverseRotation(data, ReverseOptions{IgnoreTamper: opts.IgnoreTamper, Log: opts.Log})
+	out, err := ReverseRotationReaderAt(in.r, in.size, ReverseOptions{IgnoreTamper: opts.IgnoreTamper, Log: opts.Log})
 	if err != nil {
 		return nil, err
 	}
-	if err := VerifyStructure(out); err != nil {
+	if err := verifyStructureView(out); err != nil {
 		return nil, err
 	}
 	log.printf("[ok] output box structure is internally consistent")
 	if output == "" {
 		output = DefaultReverseOutput(input)
 	}
-	return finishWrite("reverse", output, out, len(data), opts)
+	return finishWrite("reverse", output, out, in, opts)
 }
 
 // InfoFile reads path and returns GatherInfo's summary of it.
 func InfoFile(path string) (*Info, error) {
-	data, err := os.ReadFile(path)
+	in, err := openInput(path)
 	if err != nil {
 		return nil, err
 	}
-	return GatherInfo(data)
+	defer in.close()
+	return GatherInfoReaderAt(in.r, in.size)
 }
 
 // errorMessage is Python's str(e) for this package's error types.
@@ -151,21 +184,22 @@ func errorMessage(err error) string {
 }
 
 // finishWrite is _run's shared tail: overwrite refusal, dry-run, write.
-func finishWrite(cmd, output string, out []byte, inputSize int, opts FileOptions) (*Result, error) {
+func finishWrite(cmd, output string, out *View, in *input, opts FileOptions) (*Result, error) {
 	log := logger{opts.Log}
+	size, inputSize := int(out.Size()), int(in.size)
 	if _, err := os.Stat(output); err == nil && !opts.Force { // os.path.exists
 		return nil, &OutputExistsError{output}
 	}
-	res := &Result{Output: output, Size: len(out), InputSize: inputSize, DryRun: opts.DryRun}
+	res := &Result{Output: output, Size: size, InputSize: inputSize, DryRun: opts.DryRun}
 	if opts.DryRun {
 		log.printf("[dry-run] %s would succeed - would write %s (%d bytes, %+d vs input). No file written.",
-			cmd, output, len(out), len(out)-inputSize)
+			cmd, output, size, size-inputSize)
 		return res, nil
 	}
-	if err := writeOutput(output, out); err != nil {
+	if err := writeOutput(output, out, in); err != nil {
 		return nil, err
 	}
-	log.printf("[ok] wrote %s (%d bytes, %+d vs input)", output, len(out), len(out)-inputSize)
+	log.printf("[ok] wrote %s (%d bytes, %+d vs input)", output, size, size-inputSize)
 	return res, nil
 }
 
@@ -241,9 +275,11 @@ func resolveSymlinks(path string) (string, error) {
 	}
 }
 
-// writeOutput writes data to path atomically, with Python's in-place
+// writeOutput writes out to path atomically, with Python's in-place
 // open(path, 'wb') semantics for everything visible (see the file comment).
-func writeOutput(path string, data []byte) error {
+// out may read from in, which is closed before anything replaces or
+// overwrites a file (Windows can't rename over an open file).
+func writeOutput(path string, out *View, in *input) error {
 	target, err := resolveSymlinks(path)
 	if err != nil {
 		return err
@@ -261,8 +297,17 @@ func writeOutput(path string, data []byte) error {
 			return asOpenError(err, path)
 		}
 		f.Close()
-		if linkCount(existing) > 1 {
-			return writeInPlace(target, path, data) // keep the other hard links
+		if linkCount(existing) > 1 { // keep the other hard links: write in place
+			if in.info != nil && os.SameFile(existing, in.info) {
+				// Overwriting the very file out reads from: materialize first.
+				data, err := out.Bytes()
+				if err != nil {
+					return err
+				}
+				out = viewOfBytes(data)
+				in.close() // nothing reads from it now; release it before writing
+			}
+			return writeInPlace(target, path, out)
 		}
 	case errors.Is(err, fs.ErrNotExist):
 		existing = nil
@@ -280,7 +325,7 @@ func writeOutput(path string, data []byte) error {
 		os.Remove(tmpName)
 		return asOpenError(err, path)
 	}
-	if _, err := tmp.Write(data); err != nil {
+	if _, err := out.WriteTo(tmp); err != nil {
 		return fail(err)
 	}
 	if err := tmp.Sync(); err != nil {
@@ -296,6 +341,7 @@ func writeOutput(path string, data []byte) error {
 		os.Remove(tmpName)
 		return asOpenError(err, path)
 	}
+	in.close()
 	if testHookBeforeRename != nil {
 		if err := testHookBeforeRename(); err != nil {
 			os.Remove(tmpName)
@@ -312,12 +358,12 @@ func writeOutput(path string, data []byte) error {
 
 // writeInPlace is Python's exact open(path, 'wb') semantics, used for a
 // hard-linked target so its other links see the new content.
-func writeInPlace(target, path string, data []byte) error {
+func writeInPlace(target, path string, out *View) error {
 	f, err := os.OpenFile(target, os.O_WRONLY|os.O_TRUNC, 0o666)
 	if err != nil {
 		return asOpenError(err, path)
 	}
-	if _, err := f.Write(data); err != nil {
+	if _, err := out.WriteTo(f); err != nil {
 		f.Close()
 		return asOpenError(err, path)
 	}

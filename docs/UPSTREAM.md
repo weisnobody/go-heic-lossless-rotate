@@ -23,6 +23,10 @@ or whose `_version.py` doesn't match `heicrotate.Version`. Set
    and new commits.
 2. Write the new commit SHA to `difftest/upstream.commit` and run `make upstream`.
 3. Port the changes function by function, keeping the map below current.
+   Changes to `apply_rotation`/`_prepare_reversal` go into the shared orchestration in `core.go`.
+   If a change reads bytes outside the meta+provenance span in a new way, route it through `fileEnv`
+   and implement it in both `memEnv` and `stream.go`'s `streamEnv`. If it reads new boxes at fixed
+   offsets, extend `fixedReadsFit`. `stream_test.go`'s cross-check catches what's missed.
    If `cli.py`'s docstring changed, regenerate the help text:
    `python3 -I tools/gen_docstring.py .upstream/src/heic_rotate/cli.py > cli/docstring.go`.
    If its parser changed, re-capture `cli/testdata/argparse_py314.json` from the real parser.
@@ -77,6 +81,7 @@ Naming rules are in [DESIGN.md § Naming Rules](DESIGN.md#naming-rules-python--g
 | `apply_rotation(data, delta_turns, sync_exif=True, verbose=True)` | `ApplyRotation(data []byte, deltaTurns int, opts RotateOptions) ([]byte, error)`; `RotateOptions{NoExifSync bool; Log io.Writer}` |
 | `_restore_meta_provenance_span` | `restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logger) ([]byte, error)` |
 | `_prepare_reversal` | `prepareReversal(data []byte, ignoreTamper bool, log logger) (*reversal, error)` |
+| (Go-only) | `fileEnv` / `memEnv` (core.go), `streamEnv`, `View`, `ApplyRotationReaderAt`, `ReverseRotationReaderAt`, `VerifyReversibleReaderAt`, `GatherInfoReaderAt` (stream.go): the streaming engine over the same orchestration |
 | `_iter_reconstructed_chunks` | `iterReconstructedChunks(data []byte, r *reversal) iter.Seq[[]byte]` (sub-slices of `data`, no copies), called through the package variable `reconstructedChunks` (the test seam upstream monkeypatches) |
 | `reverse_rotation(data, ignore_tamper=False, verbose=True)` | `ReverseRotation(data, opts ReverseOptions) ([]byte, error)`; `ReverseOptions{IgnoreTamper bool; Log io.Writer}` |
 | `verify_reversible` | `VerifyReversible(data, opts ReverseOptions) error` |
