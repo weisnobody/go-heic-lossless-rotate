@@ -13,10 +13,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/files"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/pyfmt"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/files"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/version"
 )
 
 // buildParser builds the argument parser (← build_parser). Shared flags are

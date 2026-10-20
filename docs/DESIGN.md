@@ -50,14 +50,14 @@ deliberate divergences (D1–D5).
 | CRC32 | `hash/crc32` IEEE | Same polynomial and init as `zlib.crc32`, which is required for C1. |
 | CLI parsing | Hand-written argparse-compatible parser (`internal/cli/args.go`) | `flag` can't do flags after positionals, flags on both sides of the subcommand, or argparse prefix abbreviations. |
 | Release | goreleaser | Two builds (`heic-rotate`, `heic-lossless-rotate`), darwin/linux/windows × amd64/arm64, checksums, GitHub release. |
-| Module path | `github.com/pjg/go-heic-lossless-rotate` | `go install …@latest` works for anyone. |
-| Hosting | **Primary:** `arena.the42.net/pjg/go-heic-lossless-rotate` (origin). **Mirror:** GitHub, via push mirror of all branches **and tags** | All development and pushes go to arena. The Go module proxy, `go install` users, and goreleaser all read from GitHub, so the mirror must never lag a tag. |
+| Module path | `github.com/weisnobody/go-heic-lossless-rotate` | `go install …@latest` works for anyone. |
+| Hosting | **Primary:** `arena.the42.net/pjg/go-heic-lossless-rotate` (origin). **Mirror:** `github.com/weisnobody/go-heic-lossless-rotate` (public; also the module path), via push mirror of all branches **and tags** | All development and pushes go to arena. The Go module proxy, `go install` users, and goreleaser all read from GitHub, so the mirror must never lag a tag. |
 | CI / release | GitHub Actions on the mirror | It runs tests on push and goreleaser on a tag push, triggered when the mirror sync delivers the tag. No arena CI is assumed. |
 
 ## Repository Layout
 
 ```
-go.mod                          module github.com/pjg/go-heic-lossless-rotate
+go.mod                          module github.com/weisnobody/go-heic-lossless-rotate
 pkg/core/doc.go                 ← heic_rotate/__init__.py + module docstrings
 pkg/core/core.go                ← core.py       (1:1 port)
 pkg/core/pyerrors.go            IndexError/struct.error as *BoxParseError (COMPAT D2)
@@ -85,7 +85,7 @@ The library is four importable packages under `pkg/`; the module root holds no p
 
 | Package | Import path | Contents |
 |---|---|---|
-| `core` | `github.com/pjg/go-heic-lossless-rotate/pkg/core` | The 1:1 `core.py` port over `[]byte`: `ApplyRotation`, `ReverseRotation`, `GatherInfo`, the parsers and builders, the error types |
+| `core` | `github.com/weisnobody/go-heic-lossless-rotate/pkg/core` | The 1:1 `core.py` port over `[]byte`: `ApplyRotation`, `ReverseRotation`, `GatherInfo`, the parsers and builders, the error types |
 | `stream` | `…/pkg/stream` | `ApplyRotationReaderAt` and friends, returning a `View` |
 | `files` | `…/pkg/files` | `RotateFile`, `ReverseFile`, `InfoFile`, default output naming, atomic writes |
 | `version` | `…/pkg/version` | `Version`, `GoRevision`, `GoVersion`, `GoVersionString` |

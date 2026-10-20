@@ -24,10 +24,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/cli"
-	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/cli"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/version"
 )
 
 type cliCase struct {

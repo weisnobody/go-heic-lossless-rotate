@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/version"
 )
 
 // TestBinaries builds both commands and runs them as real processes.
@@ -18,7 +18,7 @@ func TestBinaries(t *testing.T) {
 		t.Skip("builds binaries")
 	}
 	bin := t.TempDir()
-	build := exec.Command("go", "build", "-o", bin+string(filepath.Separator), "github.com/pjg/go-heic-lossless-rotate/cmd/...")
+	build := exec.Command("go", "build", "-o", bin+string(filepath.Separator), "github.com/weisnobody/go-heic-lossless-rotate/cmd/...")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}

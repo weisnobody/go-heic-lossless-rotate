@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/tests"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 )
 
 // outcome is everything one call returns: output bytes, log text, Info, and

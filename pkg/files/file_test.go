@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
-	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
-	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/stream"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/pyfmt"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/tests"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/stream"
 )
 
 func writeSynth(t *testing.T, path string, mutate func(*synth.Options)) []byte {

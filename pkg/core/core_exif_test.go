@@ -5,10 +5,10 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
-	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
-	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/pybytes"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/tests"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 )
 
 // metaBounds returns (meta_body_start, meta content end) without

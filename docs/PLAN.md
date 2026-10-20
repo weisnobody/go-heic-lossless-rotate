@@ -13,7 +13,7 @@ measured against the real upstream tool from day one.
 ## Implementation Order
 
 ### Phase 0: Scaffolding
-- [x] `go mod init github.com/pjg/go-heic-lossless-rotate` (`go 1.23`), with `Makefile`
+- [x] `go mod init github.com/weisnobody/go-heic-lossless-rotate` (`go 1.23`), with `Makefile`
       targets `test`, `difftest`, `lint`, `build`
 - [x] `version.go` (`Version = "1.7.1"`, `GoRevision = 1`, `GoVersion`,
       `GoVersionString()`), `doc.go`

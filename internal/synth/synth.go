@@ -17,7 +17,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/pyfmt"
 )
 
 // Layout is the top-level box order. Values match synth_heic.py's strings.

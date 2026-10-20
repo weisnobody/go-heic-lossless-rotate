@@ -13,10 +13,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/craft"
-	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
-	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/craft"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/tests"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 )
 
 func errString(err error) string {

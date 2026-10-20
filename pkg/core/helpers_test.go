@@ -7,8 +7,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/tests"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 )
 
 func isProvenanceError(err error) bool {

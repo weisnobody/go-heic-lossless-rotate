@@ -268,9 +268,9 @@ All three give identical results.
 
 ```go
 import (
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/files"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/stream"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/files"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/stream"
 )
 
 // Files: everything the command does. Log: os.Stdout prints its messages.
