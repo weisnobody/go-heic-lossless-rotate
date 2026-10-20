@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
 // TestBinaries builds both commands and runs them as real processes.
@@ -43,10 +44,10 @@ func TestBinaries(t *testing.T) {
 
 	// Both names are the same program and identify as heic-lossless-rotate.
 	for _, name := range []string{"heic-rotate", "heic-lossless-rotate"} {
-		if rc, out := run(name, "-V"); rc != 0 || out != heicrotate.VersionString()+"\n" {
+		if rc, out := run(name, "-V"); rc != 0 || out != core.VersionString()+"\n" {
 			t.Errorf("%s -V: rc %d, %q", name, rc, out)
 		}
-		if rc, out := run(name, "-G"); rc != 0 || out != heicrotate.GoVersionString()+"\n" {
+		if rc, out := run(name, "-G"); rc != 0 || out != version.GoVersionString()+"\n" {
 			t.Errorf("%s -G: rc %d, %q", name, rc, out)
 		}
 		if rc, _ := run(name); rc != 2 {
@@ -67,12 +68,12 @@ func TestBinaries(t *testing.T) {
 	if rc, _ := run("heic-rotate", "90", in, out, "-q"); rc != 0 {
 		t.Fatalf("rotate: rc %d", rc)
 	}
-	want, err := heicrotate.ApplyRotation(data, 1, heicrotate.RotateOptions{})
+	want, err := core.ApplyRotation(data, 1, core.RotateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(out); !bytes.Equal(got, want) {
-		t.Error("binary output differs from heicrotate.ApplyRotation")
+		t.Error("binary output differs from core.ApplyRotation")
 	}
 	if rc, _ := run("heic-lossless-rotate", "info", out, "-q"); rc != 1 {
 		t.Errorf("info exit = %d, want 1", rc)

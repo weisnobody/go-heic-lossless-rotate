@@ -2,7 +2,7 @@
 // testing without depending on any real photo (← tests/synth_heic.py).
 //
 // These files have no real HEVC-coded pixel data (mdat is just placeholder
-// bytes) - heicrotate never interprets that payload, only the box structure
+// bytes) - the port never interprets that payload, only the box structure
 // around it, so a placeholder is sufficient to exercise every code path: box
 // parsing, iloc offset patching, provenance insertion, and the two layout
 // orders (mdat-before-meta and meta-before-mdat) that upstream's real-world

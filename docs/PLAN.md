@@ -122,6 +122,15 @@ measured against the real upstream tool from day one.
       through the streaming file API. See
       [plans/2026-10-19-implementation-phase-5.md](plans/2026-10-19-implementation-phase-5.md).
 
+### Package layout (after Phase 5)
+- [x] Split the module-root package into importable `pkg/core`, `pkg/stream`, `pkg/files`,
+      and `pkg/version`, with the CLI, the byte-access helpers, and shared test helpers under
+      `internal/` (`internal/cli`, `internal/pybytes`, `internal/tests`). The file names
+      in the phase headings above are from before this move; see
+      [DESIGN.md § Repository Layout](DESIGN.md#repository-layout).
+- [x] Result (2026-10-19): every test from before the move still runs; only the pybytes
+      tests were renamed and split. Both Python gates are green.
+
 ### Phase 6: Release
 - [ ] Verify the mirror delivers tags: push a throwaway tag to arena, confirm it appears
       on GitHub and triggers the workflow, then delete it from both
@@ -149,7 +158,7 @@ measured against the real upstream tool from day one.
 | 2 | `TestSyntheticRoundTrips` | `TestSyntheticRoundTrips` (table of 8 combos + subtests) | |
 | 2 | `TestProvenanceVersionAndSelfCheck` | same | the self-check failure uses a test hook in place of `mock.patch` |
 | 2 | `TestProvenanceLeanFormat` | same | port the `_make_v1_style_record` helper |
-| 3 | `TestCLI` | `cli.TestCLI` | in-process `Main`, plus subprocess smoke tests |
+| 3 | `TestCLI` | `cli.TestCLI` (`internal/cli`) | in-process `Main`, plus subprocess smoke tests |
 | 4 | `TestRealFiles` | `TestRealFiles` | `t.Skip` when testdata is empty, and writes `rotated/` |
 | 5 | `TestMdatContentIndependence` | same | |
 | 5 | `TestLargeMdatFixtures` | same | also run against the stream engine |
