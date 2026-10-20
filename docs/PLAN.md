@@ -139,10 +139,13 @@ measured against the real upstream tool from day one.
       `+go.N` tag (do a dry run with `--snapshot` against a local `v1.7.1+go.2` tag).
 - [ ] Release workflow: tag-vs-`GoVersion` consistency check (DESIGN.md § Go port
       version and release tags)
-- [ ] README: install (`go install`, release download), usage (point to
-      upstream for semantics), library examples, compat notes
-- [ ] Package docs with `Example*` tests for `ApplyRotation`,
-      `RotateFile`, and the streaming API
+- [x] README: self-contained CLI reference (usage, examples, options, exit codes,
+      limitations), differences from the Python tool, and a short library tour
+      pointing to the package docs (2026-10-19)
+- [ ] README: install (`go install`, release download, `go get` for the library)
+- [x] Package docs (`doc.go` guides) with `Example*` tests for `ApplyRotation`,
+      `RotateFile`, and the streaming API, and a concurrency test per package
+      confirming the documented concurrency guarantees (2026-10-19)
 - [ ] README: document `-G`, the `+go.N` scheme, and that Go-only fixes need
       `go install …@vX.Y.Z+go.N`, because `@latest` ignores metadata tags
 - [ ] Tag `v1.7.1` on arena (= GoVersion `1.7.1+go.1`) and confirm the GitHub
