@@ -475,6 +475,21 @@ func (e *streamEnv) toInput(buf []byte, off int) (int, bool) {
 	return 0, false
 }
 
+// rangeToInput maps the n-byte range at file offset off (in the file buf
+// belongs to) to input offsets [lo, hi); ok is false if any byte of it is
+// inside the span. Zero-length ranges map their start.
+func (e *streamEnv) rangeToInput(buf []byte, off, n int) (lo, hi int, ok bool) {
+	lo, ok = e.toInput(buf, off)
+	if !ok || n == 0 {
+		return lo, lo, ok
+	}
+	last, ok := e.toInput(buf, off+n-1)
+	if !ok || last-lo != n-1 {
+		return 0, 0, false
+	}
+	return lo, last + 1, true
+}
+
 func (e *streamEnv) exifField(buf []byte, metaBodyStart, metaCEnd int) (ExifOrientationField, bool, error) {
 	loc, ok, err := FindExifItemLocation(buf, metaBodyStart, metaCEnd)
 	if err != nil || !ok {
@@ -490,9 +505,8 @@ func (e *streamEnv) exifField(buf []byte, metaBodyStart, metaCEnd int) (ExifOrie
 	if n > exifBlobCap {
 		return ExifOrientationField{}, false, errFallback
 	}
-	inStart, ok1 := e.toInput(buf, start)
-	inEnd, ok2 := e.toInput(buf, start+n)
-	if !ok1 || !ok2 || inEnd-inStart != n {
+	inStart, _, ok := e.rangeToInput(buf, start, n)
+	if !ok {
 		return ExifOrientationField{}, false, errFallback // the blob would touch the span
 	}
 	blob := make([]byte, n)
@@ -504,9 +518,8 @@ func (e *streamEnv) exifField(buf []byte, metaBodyStart, metaCEnd int) (ExifOrie
 }
 
 func (e *streamEnv) writeExif(out []byte, field ExifOrientationField, value uint16) error {
-	off, ok := e.toInput(out, field.AbsOffset)
-	end, ok2 := e.toInput(out, field.AbsOffset+2)
-	if !ok || !ok2 || end-off != 2 || end > e.in.size {
+	off, end, ok := e.rangeToInput(out, field.AbsOffset, 2)
+	if !ok || end > e.in.size {
 		return errFallback
 	}
 	b := make([]byte, 2)
