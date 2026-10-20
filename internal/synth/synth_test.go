@@ -7,7 +7,7 @@ import (
 )
 
 // topBox is a minimal, independent box reader for these tests - deliberately
-// not heicrotate's own parser, so a bug shared by both can't hide here.
+// not the port's own parser, so a bug shared by both can't hide here.
 type topBox struct {
 	typ                string
 	start, cStart, end int

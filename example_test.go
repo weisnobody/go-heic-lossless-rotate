@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/files"
 )
 
 // Rotate a file 90 degrees counter-clockwise, inspect it, and restore the
@@ -19,17 +19,17 @@ func ExampleRotateFile() {
 	data, _ := synth.BuildSyntheticHEIC(synth.DefaultOptions()) // stand-in for a real photo
 	os.WriteFile(photo, data, 0o644)
 
-	res, err := heicrotate.RotateFile(photo, "", 1, heicrotate.FileOptions{})
+	res, err := files.RotateFile(photo, "", 1, files.FileOptions{})
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	fmt.Println(filepath.Base(res.Output))
 
-	info, _ := heicrotate.InfoFile(res.Output)
+	info, _ := files.InfoFile(res.Output)
 	fmt.Println("added:", *info.DeltaQuarterTurns*90, "deg")
 
-	restored, _ := heicrotate.ReverseFile(res.Output, "", heicrotate.FileOptions{})
+	restored, _ := files.ReverseFile(res.Output, "", files.FileOptions{})
 	original, _ := os.ReadFile(photo)
 	again, _ := os.ReadFile(restored.Output)
 	fmt.Println("identical:", string(original) == string(again))

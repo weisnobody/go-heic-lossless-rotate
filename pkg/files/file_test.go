@@ -1,4 +1,4 @@
-package heicrotate
+package files
 
 import (
 	"bytes"

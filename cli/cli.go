@@ -13,9 +13,9 @@ import (
 	"slices"
 	"strings"
 
-	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/files"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
@@ -231,7 +231,7 @@ func Main(argv []string, stdout, stderr io.Writer) int {
 func errorText(err error) string {
 	var be *core.BoxParseError
 	var pe *core.ProvenanceError
-	var exists *heicrotate.OutputExistsError
+	var exists *files.OutputExistsError
 	switch {
 	case errors.As(err, &be):
 		return be.Msg
@@ -250,7 +250,7 @@ func errorText(err error) string {
 // an unreadable input is reported before anything else.
 func run(a *args, stdout io.Writer) (int, error) {
 	if a.cmd == "info" {
-		result, err := heicrotate.InfoFile(a.input)
+		result, err := files.InfoFile(a.input)
 		if err != nil {
 			return 0, err
 		}
@@ -261,7 +261,7 @@ func run(a *args, stdout io.Writer) (int, error) {
 		return exitCode, nil
 	}
 
-	opts := heicrotate.FileOptions{
+	opts := files.FileOptions{
 		Force:        a.force,
 		DryRun:       a.dryRun,
 		NoExifSync:   a.noExifSync,
@@ -272,9 +272,9 @@ func run(a *args, stdout io.Writer) (int, error) {
 	}
 	var err error
 	if a.cmd == "rotate" {
-		_, err = heicrotate.RotateFile(a.input, a.output, (a.rotation/90)%4, opts)
+		_, err = files.RotateFile(a.input, a.output, (a.rotation/90)%4, opts)
 	} else {
-		_, err = heicrotate.ReverseFile(a.input, a.output, opts)
+		_, err = files.ReverseFile(a.input, a.output, opts)
 	}
 	return 0, err
 }

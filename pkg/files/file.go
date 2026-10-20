@@ -1,10 +1,9 @@
-package heicrotate
-
-// File-level API (Go-only): the rotate/reverse/info commands as library
-// calls, doing everything cli.py's _run does around the core - reading the
-// input, the structure check and post-rotate self-check, default output
-// naming, overwrite refusal, dry-run, and the write - with the same
-// messages through FileOptions.Log, so the CLI is a thin layer over it.
+// Package files is the file-level API (Go-only): the rotate/reverse/info
+// commands as library calls, doing everything cli.py's _run does around
+// the core - reading the input, the structure check and post-rotate
+// self-check, default output naming, overwrite refusal, dry-run, and the
+// write - with the same messages through FileOptions.Log, so the CLI is a
+// thin layer over it.
 //
 // Writes are atomic (docs/COMPAT.md D3): a crash or full disk can't leave a
 // truncated output, and in-place edits (input == output) can't destroy the
@@ -13,6 +12,7 @@ package heicrotate
 // same way, an overwritten file keeps its mode (and, best effort, owner),
 // new files get 0666 minus the umask, and a hard-linked output is updated
 // in place so its other links see the change.
+package files
 
 import (
 	"bytes"

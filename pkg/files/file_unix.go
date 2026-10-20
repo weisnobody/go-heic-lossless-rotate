@@ -1,6 +1,6 @@
 //go:build unix
 
-package heicrotate
+package files
 
 import (
 	"io/fs"
