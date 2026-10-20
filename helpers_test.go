@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
 )
 
@@ -131,10 +132,10 @@ func stripProvenanceTag(t testing.TB, data []byte, tag string) []byte {
 		t.Fatal(err)
 	}
 	if changed {
-		out = splice(out, info.IlocHdr.ContentStart, info.IlocHdr.ContentEnd, newIloc)
+		out = pybytes.Splice(out, info.IlocHdr.ContentStart, info.IlocHdr.ContentEnd, newIloc)
 	}
 	p2 := mustLocate(t, out).ProvenanceHdr
-	out = splice(out, p2.Start, p2.ContentEnd, smaller)
+	out = pybytes.Splice(out, p2.Start, p2.ContentEnd, smaller)
 	mustVerifyStructure(t, out) // the simulated "legacy" file must itself be well-formed
 	return out
 }
@@ -166,7 +167,7 @@ func makeV1StyleRecord(t testing.TB, original, rotatedV2 []byte) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return splice(bytes.Clone(rotatedV2), prov.Start, prov.ContentEnd, v1Box)
+	return pybytes.Splice(bytes.Clone(rotatedV2), prov.Start, prov.ContentEnd, v1Box)
 }
 
 // fingerprint is _structural_fingerprint's (top_level, prov_fingerprint,

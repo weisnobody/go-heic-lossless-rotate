@@ -28,6 +28,8 @@ import (
 	"io"
 	"math"
 	"sort"
+
+	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
 )
 
 // exifBlobCap bounds how much of an Exif item the streaming engine reads; a
@@ -213,7 +215,7 @@ type streamInput struct {
 // (ipma, iloc, provenance entries), which then fail their own consumed-
 // length checks - an error, so a fallback.
 func loadStreamInput(r io.ReaderAt, size int64) (*streamInput, error) {
-	if size < 0 || size > math.MaxInt-spliceSlack {
+	if size < 0 || size > math.MaxInt-pybytes.SpliceSlack {
 		return nil, errFallback
 	}
 	in := &streamInput{r: r, size: int(size)}
@@ -271,7 +273,7 @@ func loadStreamInput(r io.ReaderAt, size int64) (*streamInput, error) {
 	if prov >= 0 {
 		in.spanEnd = provEnd
 	}
-	in.span = make([]byte, in.spanEnd-in.metaStart, in.spanEnd-in.metaStart+spliceSlack)
+	in.span = make([]byte, in.spanEnd-in.metaStart, in.spanEnd-in.metaStart+pybytes.SpliceSlack)
 	if _, err := r.ReadAt(in.span, int64(in.metaStart)); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}

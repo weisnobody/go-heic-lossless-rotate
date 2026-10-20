@@ -1,12 +1,11 @@
-package heicrotate
+package pybytes
 
 import (
 	"bytes"
-	"errors"
 	"testing"
 )
 
-func TestPySlice(t *testing.T) {
+func TestSlice(t *testing.T) {
 	data := []byte("abcdef")
 	tests := []struct {
 		lo, hi int
@@ -17,53 +16,52 @@ func TestPySlice(t *testing.T) {
 		{6, 6, ""},
 	}
 	for _, tt := range tests {
-		if got := pySlice(data, tt.lo, tt.hi); string(got) != tt.want {
-			t.Errorf("pySlice(%d, %d) = %q, want %q", tt.lo, tt.hi, got, tt.want)
+		if got := Slice(data, tt.lo, tt.hi); string(got) != tt.want {
+			t.Errorf("Slice(%d, %d) = %q, want %q", tt.lo, tt.hi, got, tt.want)
 		}
 	}
-	// pySlice aliases; its capacity is capped so appends can't clobber data.
-	s := pySlice(data, 0, 2)
+	// Slice aliases; its capacity is capped so appends can't clobber data.
+	s := Slice(data, 0, 2)
 	_ = append(s, 'X')
 	if string(data) != "abcdef" {
-		t.Errorf("append to pySlice result overwrote data: %q", data)
+		t.Errorf("append to Slice result overwrote data: %q", data)
 	}
-	c := pySliceCopy(data, 0, 3)
+	c := SliceCopy(data, 0, 3)
 	c[0] = 'Z'
 	if data[0] != 'a' {
-		t.Error("pySliceCopy result aliases data")
+		t.Error("SliceCopy result aliases data")
 	}
 }
 
-func TestPyIndexAndUnpack(t *testing.T) {
+func TestIndexAndUnpack(t *testing.T) {
 	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09}
-	if b, err := pyIndex(data, 8); err != nil || b != 0x09 {
-		t.Errorf("pyIndex(8) = %d, %v", b, err)
+	if b, ok := Index(data, 8); !ok || b != 0x09 {
+		t.Errorf("Index(8) = %d, %v", b, ok)
 	}
-	if _, err := pyIndex(data, 9); err == nil {
-		t.Error("pyIndex(9) past end: want error")
+	if _, ok := Index(data, 9); ok {
+		t.Error("Index(9) past end: want !ok")
 	}
-	if v, err := unpackU16(data, 7); err != nil || v != 0x0809 {
-		t.Errorf("unpackU16(7) = %#x, %v", v, err)
+	if v, ok := UnpackU16(data, 7); !ok || v != 0x0809 {
+		t.Errorf("UnpackU16(7) = %#x, %v", v, ok)
 	}
-	if v, err := unpackU32(data, 5); err != nil || v != 0x06070809 {
-		t.Errorf("unpackU32(5) = %#x, %v", v, err)
+	if v, ok := UnpackU32(data, 5); !ok || v != 0x06070809 {
+		t.Errorf("UnpackU32(5) = %#x, %v", v, ok)
 	}
-	if v, err := unpackU64(data, 1); err != nil || v != 0x0203040506070809 {
-		t.Errorf("unpackU64(1) = %#x, %v", v, err)
+	if v, ok := UnpackU64(data, 1); !ok || v != 0x0203040506070809 {
+		t.Errorf("UnpackU64(1) = %#x, %v", v, ok)
 	}
-	for name, err := range map[string]error{
-		"u16": second(unpackU16(data, 8)),
-		"u32": second(unpackU32(data, 6)),
-		"u64": second(unpackU64(data, 2)),
+	for name, ok := range map[string]bool{
+		"u16": second(UnpackU16(data, 8)),
+		"u32": second(UnpackU32(data, 6)),
+		"u64": second(UnpackU64(data, 2)),
 	} {
-		var be *BoxParseError
-		if !errors.As(err, &be) {
-			t.Errorf("%s past end: err = %v, want *BoxParseError", name, err)
+		if ok {
+			t.Errorf("%s past end: want !ok", name)
 		}
 	}
 }
 
-func second[T any](_ T, err error) error { return err }
+func second[T any](_ T, ok bool) bool { return ok }
 
 func TestIntFromBytes(t *testing.T) {
 	data := []byte{0x00, 0x00, 0x12, 0x34, 0xff}
@@ -78,19 +76,19 @@ func TestIntFromBytes(t *testing.T) {
 		{0, 5, 0x1234ff},
 	}
 	for _, tt := range tests {
-		got, ok := intFromBytes(data, tt.pos, tt.n)
+		got, ok := IntFromBytes(data, tt.pos, tt.n)
 		if !ok || got != tt.want {
-			t.Errorf("intFromBytes(%d, %d) = %#x, %v; want %#x", tt.pos, tt.n, got, ok, tt.want)
+			t.Errorf("IntFromBytes(%d, %d) = %#x, %v; want %#x", tt.pos, tt.n, got, ok, tt.want)
 		}
 	}
 	// Widths over 8 bytes are accepted when the value fits (COMPAT D5)...
 	wide := append(make([]byte, 7), 0x01, 0, 0, 0, 0, 0, 0, 0x02) // 15 bytes
-	if got, ok := intFromBytes(wide, 0, 15); !ok || got != 0x0100000000000002 {
+	if got, ok := IntFromBytes(wide, 0, 15); !ok || got != 0x0100000000000002 {
 		t.Errorf("15-byte field = %#x, %v", got, ok)
 	}
 	// ...and refused only when the value itself exceeds 64 bits.
 	tooBig := append([]byte{0x01}, make([]byte, 8)...) // 2^64
-	if _, ok := intFromBytes(tooBig, 0, 9); ok {
+	if _, ok := IntFromBytes(tooBig, 0, 9); ok {
 		t.Error("2^64: want !ok")
 	}
 }
@@ -117,8 +115,8 @@ func TestSplice(t *testing.T) {
 			for _, extraCap := range []int{0, 16} {
 				buf := make([]byte, 6, 6+extraCap)
 				copy(buf, "abcdef")
-				if got := splice(buf, tt.a, tt.b, []byte(tt.repl)); string(got) != tt.want {
-					t.Errorf("cap+%d: splice = %q, want %q", extraCap, got, tt.want)
+				if got := Splice(buf, tt.a, tt.b, []byte(tt.repl)); string(got) != tt.want {
+					t.Errorf("cap+%d: Splice = %q, want %q", extraCap, got, tt.want)
 				}
 			}
 		})
@@ -126,13 +124,13 @@ func TestSplice(t *testing.T) {
 }
 
 func TestSpliceReusesCapacity(t *testing.T) {
-	buf := make([]byte, 1000, 1000+spliceSlack)
-	buf = splice(buf, 10, 10, bytes.Repeat([]byte{1}, 100))
-	if cap(buf) != 1000+spliceSlack {
+	buf := make([]byte, 1000, 1000+SpliceSlack)
+	buf = Splice(buf, 10, 10, bytes.Repeat([]byte{1}, 100))
+	if cap(buf) != 1000+SpliceSlack {
 		t.Errorf("growing within capacity reallocated (cap %d)", cap(buf))
 	}
-	grown := splice(buf, 0, 0, make([]byte, spliceSlack))
-	if cap(grown) < len(grown)+spliceSlack {
+	grown := Splice(buf, 0, 0, make([]byte, SpliceSlack))
+	if cap(grown) < len(grown)+SpliceSlack {
 		t.Errorf("reallocation didn't add slack: len %d cap %d", len(grown), cap(grown))
 	}
 }

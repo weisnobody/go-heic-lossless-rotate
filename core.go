@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
 	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
 )
 
@@ -292,7 +293,7 @@ func ParseIpma(data []byte, cStart, cEnd int) (version uint8, flags uint32, entr
 	if version, err = pyIndex(data, cStart); err != nil {
 		return
 	}
-	f, _ := intFromBytes(data, cStart+1, 3) // 3 bytes never exceed 64 bits
+	f, _ := pybytes.IntFromBytes(data, cStart+1, 3) // 3 bytes never exceed 64 bits
 	flags = uint32(f)
 	pos := cStart + 4
 	entryCount, err := unpackU32(data, pos)
@@ -444,7 +445,7 @@ func ParseIloc(data []byte, cStart, cEnd int) (*Iloc, error) {
 	if err != nil {
 		return nil, err
 	}
-	flags, _ := intFromBytes(data, cStart+1, 3) // 3 bytes always fit
+	flags, _ := pybytes.IntFromBytes(data, cStart+1, 3) // 3 bytes always fit
 	pos := cStart + 4
 	b, err := pyIndex(data, pos)
 	if err != nil {
@@ -495,7 +496,7 @@ func ParseIloc(data []byte, cStart, cEnd int) (*Iloc, error) {
 		if n == 0 {
 			return 0
 		}
-		v, ok := intFromBytes(data, pos, n)
+		v, ok := pybytes.IntFromBytes(data, pos, n)
 		tooWide = tooWide || !ok
 		pos += n
 		return v
@@ -800,13 +801,13 @@ func ParseIinfItems(data []byte, cStart, cEnd int) ([]IinfItem, error) {
 			if err != nil {
 				return nil, err
 			}
-			it = IinfItem{uint32(id), string(pySlice(data, cs+8, cs+12))}
+			it = IinfItem{uint32(id), string(pybytes.Slice(data, cs+8, cs+12))}
 		} else {
 			id, err := unpackU32(data, cs+4)
 			if err != nil {
 				return nil, err
 			}
-			it = IinfItem{id, string(pySlice(data, cs+10, cs+14))}
+			it = IinfItem{id, string(pybytes.Slice(data, cs+10, cs+14))}
 		}
 		items = append(items, it)
 	}
@@ -901,7 +902,7 @@ func FindExifOrientationField(data []byte, metaBodyStart, metaCEnd int) (field E
 	if err != nil || !ok {
 		return field, false, err
 	}
-	field, ok = exifFieldInBlob(pySlice64(data, loc.AbsStart, loc.Length), loc.AbsStart)
+	field, ok = exifFieldInBlob(pybytes.Slice64(data, loc.AbsStart, loc.Length), loc.AbsStart)
 	return field, ok, nil
 }
 
@@ -915,7 +916,7 @@ func exifFieldInBlob(blob []byte, absStart uint64) (field ExifOrientationField, 
 	}
 	tiffHeaderOffset := binary.BigEndian.Uint32(blob[0:4])
 	tiffStartInBlob := 4 + int(tiffHeaderOffset)
-	tiff := pySlice(blob, tiffStartInBlob, len(blob))
+	tiff := pybytes.Slice(blob, tiffStartInBlob, len(blob))
 	if len(tiff) < 8 || (string(tiff[:2]) != "II" && string(tiff[:2]) != "MM") {
 		return field, false
 	}
@@ -930,7 +931,7 @@ func exifFieldInBlob(blob []byte, absStart uint64) (field ExifOrientationField, 
 	numEntries := int(order.Uint16(tiff[ifd0Offset : ifd0Offset+2]))
 	pos := ifd0Offset + 2
 	for range numEntries {
-		entry := pySlice(tiff, pos, pos+12)
+		entry := pybytes.Slice(tiff, pos, pos+12)
 		if len(entry) < 12 {
 			break
 		}
@@ -952,8 +953,8 @@ func exifFieldInBlob(blob []byte, absStart uint64) (field ExifOrientationField, 
 // isn't hashing itself (← crc32_excluding_range). Computed incrementally
 // over the two halves; nothing is copied.
 func Crc32ExcludingRange(data []byte, exclStart, exclEnd int) uint32 {
-	crc := crc32.ChecksumIEEE(pySlice(data, 0, exclStart))
-	return crc32.Update(crc, crc32.IEEETable, pySlice(data, exclEnd, len(data)))
+	crc := crc32.ChecksumIEEE(pybytes.Slice(data, 0, exclStart))
+	return crc32.Update(crc, crc32.IEEETable, pybytes.Slice(data, exclEnd, len(data)))
 }
 
 // FindProvenanceBox returns the first top-level 'uuid' box carrying
@@ -995,14 +996,14 @@ func parseProvenanceEntries(data []byte, hdr BoxHeader, strictVersion bool) (uin
 	pos++
 	entries := ProvenanceEntries{}
 	for range entryCount {
-		tag := string(pySlice(data, pos, pos+4))
+		tag := string(pybytes.Slice(data, pos, pos+4))
 		pos += 4
 		length, err := unpackU32(data, pos)
 		if err != nil {
 			return 0, nil, 0, err
 		}
 		pos += 4
-		entries[tag] = pySliceCopy(data, pos, pos+int(length)) // later duplicates win, as in a dict
+		entries[tag] = pybytes.SliceCopy(data, pos, pos+int(length)) // later duplicates win, as in a dict
 		pos += int(length)
 	}
 	return version, entries, pos, nil
@@ -1329,7 +1330,7 @@ func (memEnv) outputCRCExcluding(out []byte, a, b int) (uint32, error) {
 // workingCopy mirrors bytearray(data), with spare capacity so splice can
 // grow it in place.
 func workingCopy(data []byte) []byte {
-	out := make([]byte, len(data), len(data)+spliceSlack)
+	out := make([]byte, len(data), len(data)+pybytes.SpliceSlack)
 	copy(out, data)
 	return out
 }
@@ -1422,10 +1423,10 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 	// Pristine snapshots we may need to save (only on the FIRST ever edit).
 	// The pristine 'irot' state itself is captured inside whichever of the
 	// FAST/SLOW PATH branches below actually runs.
-	pristineMetaSize := pySliceCopy(data, metaStart, metaStart+4)
+	pristineMetaSize := pybytes.SliceCopy(data, metaStart, metaStart+4)
 	var pristineIlocContent []byte
 	if ilocHdr != nil {
-		pristineIlocContent = pySliceCopy(data, ilocHdr.ContentStart, ilocHdr.ContentEnd)
+		pristineIlocContent = pybytes.SliceCopy(data, ilocHdr.ContentStart, ilocHdr.ContentEnd)
 	}
 	exifField, hasExif, err := env.exifField(data, metaBodyStart, metaCEnd)
 	if err != nil {
@@ -1494,7 +1495,7 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 		}
 
 		newIrotBox := makeBox("irot", []byte{byte(newTurns)})
-		newIpcoContent := append(pySliceCopy(data, ipcoHdr.ContentStart, ipcoHdr.ContentEnd), newIrotBox...)
+		newIpcoContent := append(pybytes.SliceCopy(data, ipcoHdr.ContentStart, ipcoHdr.ContentEnd), newIrotBox...)
 		newIpcoBox := makeBox("ipco", newIpcoContent)
 		newPropertyIndex := len(ipcoChildren) + 1
 
@@ -1567,7 +1568,7 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 
 		out = workingCopy(data)
 		for _, op := range ops {
-			out = splice(out, op.start, op.end, op.repl)
+			out = pybytes.Splice(out, op.start, op.end, op.repl)
 		}
 
 		log.printf("[slow path] inserted new 'irot' property (index "+
@@ -1713,7 +1714,7 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 			return nil, err
 		}
 		if anyChanged {
-			out = splice(out, ilocHdrNow.ContentStart, ilocHdrNow.ContentEnd, newIlocContent)
+			out = pybytes.Splice(out, ilocHdrNow.ContentStart, ilocHdrNow.ContentEnd, newIlocContent)
 			log.printf("[provenance] patched absolute offsets in 'iloc' " +
 				"for the provenance box's own insertion/resize too " +
 				"(metadata precedes media data in this file's " +
@@ -1743,7 +1744,7 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 			"placeholder and real CCRC - CCRC should always be a " +
 			"fixed 4 bytes")
 	}
-	out = splice(out, oldProvStart, oldProvEnd, newProvBox)
+	out = pybytes.Splice(out, oldProvStart, oldProvEnd, newProvBox)
 
 	action := "created"
 	if len(existingProvenance) > 0 { // Python: `if existing_provenance` (dict truthiness)
@@ -1824,7 +1825,7 @@ func restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logge
 	//     ipco child, with its association always the LAST entry in the
 	//     primary item's ipma list - so no index bookkeeping was needed.
 	if pristineIprp, ok := entries["OPRP"]; ok {
-		span = splice(span, iprpStart, iprpCEnd, pristineIprp)
+		span = pybytes.Splice(span, iprpStart, iprpCEnd, pristineIprp)
 		log.printf("[reverse] restored pristine 'iprp' from full v1 "+
 			"snapshot (%d bytes)", len(pristineIprp))
 	} else if oirt, ok := entries["OIRT"]; ok {
@@ -1909,7 +1910,7 @@ func restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logge
 				return nil, err
 			}
 
-			newIpcoBox := makeBox("ipco", pySliceCopy(span, ipcoHdr.ContentStart, lastChild.Start))
+			newIpcoBox := makeBox("ipco", pybytes.SliceCopy(span, ipcoHdr.ContentStart, lastChild.Start))
 			var newIprpContent []byte
 			if ipcoHdr.Start < ipmaHdr.Start { // first_is_ipco
 				newIprpContent = append(newIpcoBox, newIpmaBox...)
@@ -1917,7 +1918,7 @@ func restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logge
 				newIprpContent = append(newIpmaBox, newIpcoBox...)
 			}
 			newIprpBox := makeBox("iprp", newIprpContent)
-			span = splice(span, iprpStart, iprpCEnd, newIprpBox)
+			span = pybytes.Splice(span, iprpStart, iprpCEnd, newIprpBox)
 			log.printf("[reverse] removed inserted 'irot' property and "+
 				"its 'ipma' association, restored original 'ipma' "+
 				"flags (%d byte 'iprp' now, was %d)", len(newIprpBox), iprpCEnd-iprpStart)
@@ -1938,7 +1939,7 @@ func restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logge
 		return nil, err
 	}
 	metaStartLocal := info.MetaHdr.Start
-	span = splice(span, metaStartLocal, metaStartLocal+4, omsz)
+	span = pybytes.Splice(span, metaStartLocal, metaStartLocal+4, omsz)
 
 	// Remove the provenance box itself NOW, before restoring iloc - which
 	// needs 'meta''s own byte range in its FINAL (post-shrink) state.
@@ -1949,7 +1950,7 @@ func restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logge
 	if info3.ProvenanceHdr == nil { // Python: unpacking None (TypeError, COMPAT D2)
 		return nil, provenanceErrorf("provenance box no longer found after restoring 'meta' - cannot reverse")
 	}
-	span = splice(span, info3.ProvenanceHdr.Start, info3.ProvenanceHdr.ContentEnd, nil)
+	span = pybytes.Splice(span, info3.ProvenanceHdr.Start, info3.ProvenanceHdr.ContentEnd, nil)
 
 	// Restore iloc content, if we have a saved snapshot.
 	if oilc, ok := entries["OILC"]; ok {
@@ -1958,7 +1959,7 @@ func restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logge
 			return nil, err
 		}
 		if info4.IlocHdr != nil {
-			span = splice(span, info4.IlocHdr.ContentStart, info4.IlocHdr.ContentEnd, oilc)
+			span = pybytes.Splice(span, info4.IlocHdr.ContentStart, info4.IlocHdr.ContentEnd, oilc)
 		}
 	}
 	return span, nil
@@ -2044,7 +2045,7 @@ func prepareReversalEnv(env fileEnv, data []byte, ignoreTamper bool, log logger)
 	// sibling; it is never touched by the restoration itself, only
 	// (optionally) by the Exif-Orientation patch below.
 	metaStart := info.MetaHdr.Start
-	span, err := restoreMetaProvenanceSpan(pySliceCopy(data, metaStart, provEnd), entries, log)
+	span, err := restoreMetaProvenanceSpan(pybytes.SliceCopy(data, metaStart, provEnd), entries, log)
 	if err != nil {
 		return nil, err
 	}
@@ -2123,7 +2124,7 @@ func iterReconstructedChunks(data []byte, r *reversal) iter.Seq[[]byte] {
 		for _, c := range reconstructedPlan(r) {
 			b := c.lit
 			if b == nil {
-				b = pySlice(data, c.lo, c.hi)
+				b = pybytes.Slice(data, c.lo, c.hi)
 			}
 			if !yield(b) {
 				return

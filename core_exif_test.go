@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
 )
 
@@ -102,7 +103,7 @@ func TestPySlice64(t *testing.T) {
 		{2, 2, "cd"}, {4, 100, "ef"}, {6, 1, ""}, {1 << 63, 5, ""}, {3, 1<<64 - 1, "def"},
 	}
 	for _, tt := range tests {
-		if got := pySlice64(data, tt.start, tt.length); string(got) != tt.want {
+		if got := pybytes.Slice64(data, tt.start, tt.length); string(got) != tt.want {
 			t.Errorf("pySlice64(%d, %d) = %q, want %q", tt.start, tt.length, got, tt.want)
 		}
 	}
