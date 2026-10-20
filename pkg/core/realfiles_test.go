@@ -17,9 +17,10 @@ import (
 	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
 )
 
+// Both directories are at the module root (gitignored, like upstream's).
 const (
-	testdataDir = "testdata"
-	rotatedDir  = "rotated"
+	testdataDir = "../../testdata"
+	rotatedDir  = "../../rotated"
 )
 
 func discoverRealTestFiles(t *testing.T) []string {
