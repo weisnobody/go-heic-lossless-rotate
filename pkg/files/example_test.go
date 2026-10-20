@@ -1,4 +1,4 @@
-package heicrotate_test
+package files_test
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/files"
 )
 
@@ -37,18 +36,4 @@ func ExampleRotateFile() {
 	// photo_rotated.heic
 	// added: 90 deg
 	// identical: true
-}
-
-// Work on bytes in memory instead of files.
-func ExampleApplyRotation() {
-	data, _ := synth.BuildSyntheticHEIC(synth.DefaultOptions())
-	rotated, err := core.ApplyRotation(data, 3, core.RotateOptions{}) // 270 deg CCW = 90 deg clockwise
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	turns, _ := core.GetCurrentRotation(rotated)
-	restored, _ := core.ReverseRotation(rotated, core.ReverseOptions{})
-	fmt.Println(turns*90, string(restored) == string(data))
-	// Output: 270 true
 }
