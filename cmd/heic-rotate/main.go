@@ -8,7 +8,7 @@ package main
 import (
 	"os"
 
-	"github.com/pjg/go-heic-lossless-rotate/cli"
+	"github.com/pjg/go-heic-lossless-rotate/internal/cli"
 )
 
 func main() {

@@ -1,7 +1,7 @@
-"""Regenerate cli/docstring.go from the pinned upstream cli.py docstring.
+"""Regenerate internal/cli/docstring.go from the pinned upstream cli.py docstring.
 
 Usage (from the repo root, after `make upstream`):
-    python3 -I tools/gen_docstring.py .upstream/src/heic_rotate/cli.py > cli/docstring.go
+    python3 -I tools/gen_docstring.py .upstream/src/heic_rotate/cli.py > internal/cli/docstring.go
 """
 import ast
 import json

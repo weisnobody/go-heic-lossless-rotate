@@ -17,8 +17,9 @@ package cli
 //     after it belongs to the subcommand's parser.
 //
 // The parse routines below mirror argparse's _parse_optional and
-// consume_optional step by step. cli/testdata/argparse_py314.json holds the
-// behavior captured from the real parser that the tests check against.
+// consume_optional step by step. internal/cli/testdata/argparse_py314.json
+// holds the behavior captured from the real parser that the tests check
+// against.
 
 import (
 	"fmt"

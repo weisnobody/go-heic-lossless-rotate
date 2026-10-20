@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/cli"
+	"github.com/pjg/go-heic-lossless-rotate/internal/cli"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
@@ -239,12 +239,12 @@ func TestCLIMatchesPython(t *testing.T) {
 	}
 	withX := files(map[string][]byte{"x": x})
 
-	// 1. Every argv captured by the parser probe (cli/testdata), with a
+	// 1. Every argv captured by the parser probe (internal/cli/testdata), with a
 	//    real input file "x".
 	var probe []struct {
 		Argv []string `json:"argv"`
 	}
-	raw, err := os.ReadFile("../cli/testdata/argparse_py314.json")
+	raw, err := os.ReadFile("../internal/cli/testdata/argparse_py314.json")
 	if err != nil {
 		t.Fatal(err)
 	}
