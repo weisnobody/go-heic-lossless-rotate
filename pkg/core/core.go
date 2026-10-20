@@ -13,7 +13,7 @@
 // input. Sections and functions appear in the same order as core.py, so the
 // two files can be read side by side.
 
-package heicrotate
+package core
 
 import (
 	"encoding/binary"
@@ -197,8 +197,8 @@ func IterBoxes(data []byte, start, end int) iter.Seq2[BoxHeader, error] {
 	}
 }
 
-// listBoxes mirrors list(iter_boxes(data, start, end)).
-func listBoxes(data []byte, start, end int) ([]BoxHeader, error) {
+// ListBoxes mirrors list(iter_boxes(data, start, end)).
+func ListBoxes(data []byte, start, end int) ([]BoxHeader, error) {
 	var out []BoxHeader
 	for hdr, err := range IterBoxes(data, start, end) {
 		if err != nil {
@@ -403,7 +403,7 @@ func makeBox(boxtype string, content []byte) []byte {
 
 // ParseIpcoChildren returns ipco's child property boxes (← parse_ipco_children).
 func ParseIpcoChildren(data []byte, cStart, cEnd int) ([]BoxHeader, error) {
-	return listBoxes(data, cStart, cEnd)
+	return ListBoxes(data, cStart, cEnd)
 }
 
 // ---------------------------------------------------------------------------
@@ -903,15 +903,15 @@ func FindExifOrientationField(data []byte, metaBodyStart, metaCEnd int) (field E
 	if err != nil || !ok {
 		return field, false, err
 	}
-	field, ok = exifFieldInBlob(pybytes.Slice64(data, loc.AbsStart, loc.Length), loc.AbsStart)
+	field, ok = ExifFieldInBlob(pybytes.Slice64(data, loc.AbsStart, loc.Length), loc.AbsStart)
 	return field, ok, nil
 }
 
-// exifFieldInBlob is FindExifOrientationField's parse of the Exif item's
+// ExifFieldInBlob is FindExifOrientationField's parse of the Exif item's
 // bytes (blob, at file offset absStart): the TIFF header, IFD0, and its
-// Orientation entry. Shared with the streaming engine, which reads the blob
-// through an io.ReaderAt.
-func exifFieldInBlob(blob []byte, absStart uint64) (field ExifOrientationField, ok bool) {
+// Orientation entry. Shared with the streaming engine (package stream), which
+// reads the blob through an io.ReaderAt.
+func ExifFieldInBlob(blob []byte, absStart uint64) (field ExifOrientationField, ok bool) {
 	if len(blob) < 12 {
 		return field, false
 	}
@@ -1063,7 +1063,7 @@ type Structures struct {
 // and the provenance box (← locate_structures). Shared by rotate, reverse,
 // and info so parsing logic lives in exactly one place.
 func LocateStructures(data []byte) (*Structures, error) {
-	top, err := listBoxes(data, 0, len(data))
+	top, err := ListBoxes(data, 0, len(data))
 	if err != nil {
 		return nil, err
 	}
@@ -1275,48 +1275,48 @@ type RotateOptions struct {
 	Log        io.Writer // receives the verbose diagnostic lines; nil = silent
 }
 
-// fileEnv is how the rotate and reverse orchestration below reaches bytes
-// outside the buffer it edits. The []byte engine (memEnv) edits the whole
-// file, so everything is in the buffer and buffer offsets are file offsets.
-// The streaming engine (stream.go) edits only the meta+provenance span,
-// which starts at file offset base(), and reads the rest of the file on
-// demand. Everything else - every parse, decision, and message - is the
+// FileEnv is how the rotate and reverse orchestration below reaches bytes
+// outside the buffer it edits (Go-only; the hook package stream implements).
+// The []byte engine (memEnv) edits the whole file, so everything is in the
+// buffer and buffer offsets are file offsets. The streaming engine (package
+// stream) edits only the meta+provenance span, which starts at file offset
+// Base(), and reads the rest of the file on demand. Everything else - every parse, decision, and message - is the
 // same code for both, in core.py's order.
-type fileEnv interface {
-	// base is the file offset of the edited buffer's first byte.
-	base() int
-	// inputCRC is crc32 of the whole input file; in is the input buffer.
-	inputCRC(in []byte) (uint32, error)
-	// inputCRCExcluding is crc32 of the input file with the buffer range
+type FileEnv interface {
+	// Base is the file offset of the edited buffer's first byte.
+	Base() int
+	// InputCRC is crc32 of the whole input file; in is the input buffer.
+	InputCRC(in []byte) (uint32, error)
+	// InputCRCExcluding is crc32 of the input file with the buffer range
 	// [a, b) removed.
-	inputCRCExcluding(in []byte, a, b int) (uint32, error)
-	// exifField is FindExifOrientationField for buf - the input buffer or
+	InputCRCExcluding(in []byte, a, b int) (uint32, error)
+	// ExifField is FindExifOrientationField for buf - the input buffer or
 	// an output buffer derived from it - with AbsOffset a file offset.
-	exifField(buf []byte, metaBodyStart, metaCEnd int) (ExifOrientationField, bool, error)
-	// writeExif stores value as the output's Exif Orientation, at file
+	ExifField(buf []byte, metaBodyStart, metaCEnd int) (ExifOrientationField, bool, error)
+	// WriteExif stores value as the output's Exif Orientation, at file
 	// offset field.AbsOffset.
-	writeExif(out []byte, field ExifOrientationField, value uint16) error
-	// outputCRCExcluding is crc32 of the whole output file - out plus
+	WriteExif(out []byte, field ExifOrientationField, value uint16) error
+	// OutputCRCExcluding is crc32 of the whole output file - out plus
 	// whatever surrounds it - with the buffer range [a, b) removed.
-	outputCRCExcluding(out []byte, a, b int) (uint32, error)
+	OutputCRCExcluding(out []byte, a, b int) (uint32, error)
 }
 
-// memEnv is the []byte engine's fileEnv: the buffer is the whole file.
+// memEnv is the []byte engine's FileEnv: the buffer is the whole file.
 type memEnv struct{}
 
-func (memEnv) base() int { return 0 }
+func (memEnv) Base() int { return 0 }
 
-func (memEnv) inputCRC(in []byte) (uint32, error) { return crc32.ChecksumIEEE(in), nil }
+func (memEnv) InputCRC(in []byte) (uint32, error) { return crc32.ChecksumIEEE(in), nil }
 
-func (memEnv) inputCRCExcluding(in []byte, a, b int) (uint32, error) {
+func (memEnv) InputCRCExcluding(in []byte, a, b int) (uint32, error) {
 	return Crc32ExcludingRange(in, a, b), nil
 }
 
-func (memEnv) exifField(buf []byte, metaBodyStart, metaCEnd int) (ExifOrientationField, bool, error) {
+func (memEnv) ExifField(buf []byte, metaBodyStart, metaCEnd int) (ExifOrientationField, bool, error) {
 	return FindExifOrientationField(buf, metaBodyStart, metaCEnd)
 }
 
-func (memEnv) writeExif(out []byte, field ExifOrientationField, value uint16) error {
+func (memEnv) WriteExif(out []byte, field ExifOrientationField, value uint16) error {
 	if field.AbsOffset+2 > len(out) { // Python: struct.error (COMPAT D2)
 		return errUnpack(2, field.AbsOffset, len(out))
 	}
@@ -1324,7 +1324,7 @@ func (memEnv) writeExif(out []byte, field ExifOrientationField, value uint16) er
 	return nil
 }
 
-func (memEnv) outputCRCExcluding(out []byte, a, b int) (uint32, error) {
+func (memEnv) OutputCRCExcluding(out []byte, a, b int) (uint32, error) {
 	return Crc32ExcludingRange(out, a, b), nil
 }
 
@@ -1352,12 +1352,13 @@ type spliceOp struct {
 //
 // The input is never modified.
 func ApplyRotation(data []byte, deltaTurns int, opts RotateOptions) ([]byte, error) {
-	return applyRotation(memEnv{}, data, deltaTurns, opts)
+	return ApplyRotationEnv(memEnv{}, data, deltaTurns, opts)
 }
 
-// applyRotation is ApplyRotation's body over a fileEnv: data is the buffer
+// ApplyRotationEnv is ApplyRotation's body over a FileEnv: data is the buffer
 // to edit (the whole file, or the streaming engine's meta+provenance span).
-func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions) ([]byte, error) {
+// Go-only, for package stream.
+func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptions) ([]byte, error) {
 	log := logger{opts.Log}
 	deltaTurns &= 0x3
 
@@ -1429,7 +1430,7 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 	if ilocHdr != nil {
 		pristineIlocContent = pybytes.SliceCopy(data, ilocHdr.ContentStart, ilocHdr.ContentEnd)
 	}
-	exifField, hasExif, err := env.exifField(data, metaBodyStart, metaCEnd)
+	exifField, hasExif, err := env.ExifField(data, metaBodyStart, metaCEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -1470,7 +1471,7 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 		} else {
 			out[irotDataPos] = byte(newTurns)
 			log.printf("[fast path] existing 'irot' = %d deg, + %d deg delta -> "+
-				"%d deg, patched in place at offset %d", currentTurns*90, deltaTurns*90, newTurns*90, env.base()+irotDataPos)
+				"%d deg, patched in place at offset %d", currentTurns*90, deltaTurns*90, newTurns*90, env.Base()+irotDataPos)
 		}
 	}
 
@@ -1529,7 +1530,7 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 		delta := len(newIprpBox) - (iprpHdr.ContentEnd - iprpHdr.Start)
 
 		var ops []spliceOp
-		newIlocContent, anyChanged, err := PatchIlocOffsetsAtThreshold(data, ilocHdr, env.base()+iprpHdr.Start, delta)
+		newIlocContent, anyChanged, err := PatchIlocOffsetsAtThreshold(data, ilocHdr, env.Base()+iprpHdr.Start, delta)
 		if err != nil {
 			return nil, err
 		}
@@ -1586,13 +1587,13 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 		if err != nil {
 			return nil, err
 		}
-		fieldNow, ok, err := env.exifField(out, infoNow.MetaBodyStart, infoNow.MetaHdr.ContentEnd)
+		fieldNow, ok, err := env.ExifField(out, infoNow.MetaBodyStart, infoNow.MetaHdr.ContentEnd)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
 			newExifOrientation := IrotToExifOrientation[newTurns]
-			if err := env.writeExif(out, fieldNow, newExifOrientation); err != nil {
+			if err := env.WriteExif(out, fieldNow, newExifOrientation); err != nil {
 				return nil, err
 			}
 			log.printf("[exif sync] embedded legacy Exif Orientation tag "+
@@ -1656,7 +1657,7 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 			entries["OEXO"] = pristineExifOrientation
 		}
 		// PCRC: crc32 of the truly original file (no provenance box existed yet)
-		pcrc, err := env.inputCRC(data)
+		pcrc, err := env.InputCRC(data)
 		if err != nil {
 			return nil, err
 		}
@@ -1710,7 +1711,7 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 		// into mdat needs to shift by the size delta. This is a SEPARATE
 		// delta from the iprp-insertion patch earlier (if any).
 		ilocHdrNow := infoNow.IlocHdr
-		newIlocContent, anyChanged, err := PatchIlocOffsetsAtThreshold(out, ilocHdrNow, env.base()+oldProvEnd, provDelta)
+		newIlocContent, anyChanged, err := PatchIlocOffsetsAtThreshold(out, ilocHdrNow, env.Base()+oldProvEnd, provDelta)
 		if err != nil {
 			return nil, err
 		}
@@ -1731,7 +1732,7 @@ func applyRotation(env fileEnv, data []byte, deltaTurns int, opts RotateOptions)
 	// Now compute the REAL CCRC over the file as it will be immediately
 	// BEFORE the provenance box is (re)written - with iloc already patched
 	// and the provenance box itself excluded.
-	ccrc, err := env.outputCRCExcluding(out, oldProvStart, oldProvEnd)
+	ccrc, err := env.OutputCRCExcluding(out, oldProvStart, oldProvEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -1972,9 +1973,10 @@ type exifPatch struct {
 	bytes  []byte
 }
 
-// reversal is everything prepareReversal works out before the reconstructed
-// bytes are assembled.
-type reversal struct {
+// Reversal is everything prepareReversal works out before the reconstructed
+// bytes are assembled. Go-only, for package stream; its contents are
+// private.
+type Reversal struct {
 	entries   ProvenanceEntries
 	metaStart int
 	provEnd   int
@@ -1988,13 +1990,14 @@ type reversal struct {
 // embedded-Exif patch (← _prepare_reversal). Having this in exactly one
 // place means the two can't drift apart on what counts as a
 // valid/tampered/malformed record.
-func prepareReversal(data []byte, ignoreTamper bool, log logger) (*reversal, error) {
-	return prepareReversalEnv(memEnv{}, data, ignoreTamper, log)
+func prepareReversal(data []byte, ignoreTamper bool, log logger) (*Reversal, error) {
+	return PrepareReversalEnv(memEnv{}, data, ignoreTamper, log.w)
 }
 
-// prepareReversalEnv is prepareReversal over a fileEnv; the returned
-// reversal's offsets are file offsets.
-func prepareReversalEnv(env fileEnv, data []byte, ignoreTamper bool, log logger) (*reversal, error) {
+// PrepareReversalEnv is prepareReversal over a FileEnv, logging to log; the
+// returned Reversal's offsets are file offsets. Go-only, for package stream.
+func PrepareReversalEnv(env FileEnv, data []byte, ignoreTamper bool, w io.Writer) (*Reversal, error) {
+	log := logger{w}
 	info, err := LocateStructures(data)
 	if err != nil {
 		return nil, err
@@ -2003,7 +2006,7 @@ func prepareReversalEnv(env fileEnv, data []byte, ignoreTamper bool, log logger)
 	if provHdr == nil {
 		return nil, &ProvenanceError{Msg: "no heic-lossless-rotate provenance record found in this file - " +
 			"either it was never edited by this tool, or the record was " +
-			"stripped by something else. Cannot reverse.", Err: errNoProvenance}
+			"stripped by something else. Cannot reverse.", Err: ErrNoProvenance}
 	}
 
 	version, entries, err := ParseProvenance(data, *provHdr)
@@ -2021,7 +2024,7 @@ func prepareReversalEnv(env fileEnv, data []byte, ignoreTamper bool, log logger)
 	}
 
 	provStart, provEnd := provHdr.Start, provHdr.ContentEnd
-	currentCcrc, err := env.inputCRCExcluding(data, provStart, provEnd)
+	currentCcrc, err := env.InputCRCExcluding(data, provStart, provEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -2054,10 +2057,10 @@ func prepareReversalEnv(env fileEnv, data []byte, ignoreTamper bool, log logger)
 	// The Exif patch, if any, lands inside 'mdat' - read its CURRENT
 	// position and value directly off data. Reversing never moves mdat's
 	// own bytes, only removes/shrinks the meta+provenance span.
-	metaStart, provEnd = env.base()+metaStart, env.base()+provEnd // file offsets from here on
-	r := &reversal{entries: entries, metaStart: metaStart, provEnd: provEnd, span: span}
+	metaStart, provEnd = env.Base()+metaStart, env.Base()+provEnd // file offsets from here on
+	r := &Reversal{entries: entries, metaStart: metaStart, provEnd: provEnd, span: span}
 	if oexo, ok := entries["OEXO"]; ok {
-		field, ok, err := env.exifField(data, info.MetaBodyStart, info.MetaHdr.ContentEnd)
+		field, ok, err := env.ExifField(data, info.MetaBodyStart, info.MetaHdr.ContentEnd)
 		if err != nil {
 			return nil, err
 		}
@@ -2080,35 +2083,35 @@ func prepareReversalEnv(env fileEnv, data []byte, ignoreTamper bool, log logger)
 	return r, nil
 }
 
-// errNoProvenance marks prepareReversal's "no provenance record" error
+// ErrNoProvenance marks prepareReversal's "no provenance record" error
 // (errors.Is), which the streaming engine can report without a fallback.
-var errNoProvenance = errors.New("no provenance record")
+var ErrNoProvenance = errors.New("no provenance record")
 
-// chunk is one run of the reconstructed file: lit if non-nil, otherwise the
-// input's bytes [lo, hi) with Python slice semantics (clamped, lo > hi is
-// empty; hi may be math.MaxInt for "to the end").
-type chunk struct {
-	lo, hi int
-	lit    []byte
+// Chunk is one run of the reconstructed file: Lit if non-nil, otherwise the
+// input's bytes [Lo, Hi) with Python slice semantics (clamped, Lo > Hi is
+// empty; Hi may be math.MaxInt for "to the end").
+type Chunk struct {
+	Lo, Hi int
+	Lit    []byte
 }
 
-// reconstructedPlan is the reconstructed file as a sequence of chunks - the
+// ReconstructedPlan is the reconstructed file as a sequence of chunks - the
 // decision of what bytes it consists of, in file order, shared by
 // iterReconstructedChunks and the streaming engine.
-func reconstructedPlan(r *reversal) []chunk {
-	var plan []chunk
+func ReconstructedPlan(r *Reversal) []Chunk {
+	var plan []Chunk
 	if r.exif != nil && r.exif.offset < r.metaStart {
-		plan = append(plan, chunk{lo: 0, hi: r.exif.offset}, chunk{lit: r.exif.bytes},
-			chunk{lo: r.exif.offset + 2, hi: r.metaStart})
+		plan = append(plan, Chunk{Lo: 0, Hi: r.exif.offset}, Chunk{Lit: r.exif.bytes},
+			Chunk{Lo: r.exif.offset + 2, Hi: r.metaStart})
 	} else {
-		plan = append(plan, chunk{lo: 0, hi: r.metaStart})
+		plan = append(plan, Chunk{Lo: 0, Hi: r.metaStart})
 	}
-	plan = append(plan, chunk{lit: r.span})
+	plan = append(plan, Chunk{Lit: r.span})
 	if r.exif != nil && r.exif.offset >= r.provEnd {
-		plan = append(plan, chunk{lo: r.provEnd, hi: r.exif.offset}, chunk{lit: r.exif.bytes},
-			chunk{lo: r.exif.offset + 2, hi: math.MaxInt})
+		plan = append(plan, Chunk{Lo: r.provEnd, Hi: r.exif.offset}, Chunk{Lit: r.exif.bytes},
+			Chunk{Lo: r.exif.offset + 2, Hi: math.MaxInt})
 	} else {
-		plan = append(plan, chunk{lo: r.provEnd, hi: math.MaxInt})
+		plan = append(plan, Chunk{Lo: r.provEnd, Hi: math.MaxInt})
 	}
 	return plan
 }
@@ -2117,15 +2120,15 @@ func reconstructedPlan(r *reversal) []chunk {
 // order, as a handful of chunks: sub-slices of data for everything passed
 // through unchanged, real bytes only for the restored meta+provenance span
 // and (if applicable) the Exif patch (← _iter_reconstructed_chunks). The
-// sequence is reconstructedPlan's - the SINGLE decision of what bytes the
+// sequence is ReconstructedPlan's - the SINGLE decision of what bytes the
 // reconstructed file consists of. ReverseRotation concatenates the chunks,
 // VerifyReversible only feeds them into a running CRC32.
-func iterReconstructedChunks(data []byte, r *reversal) iter.Seq[[]byte] {
+func iterReconstructedChunks(data []byte, r *Reversal) iter.Seq[[]byte] {
 	return func(yield func([]byte) bool) {
-		for _, c := range reconstructedPlan(r) {
-			b := c.lit
+		for _, c := range ReconstructedPlan(r) {
+			b := c.Lit
 			if b == nil {
-				b = pybytes.Slice(data, c.lo, c.hi)
+				b = pybytes.Slice(data, c.Lo, c.Hi)
 			}
 			if !yield(b) {
 				return
@@ -2139,9 +2142,10 @@ func iterReconstructedChunks(data []byte, r *reversal) iter.Seq[[]byte] {
 // identical chunk sequence (upstream monkeypatches the same function).
 var reconstructedChunks = iterReconstructedChunks
 
-// checkReconstructedCrc compares the reconstructed file's CRC32 with the
-// pristine-original CRC32 recorded on the very first edit.
-func checkReconstructedCrc(r *reversal, finalCrc uint32, log logger) error {
+// CheckReconstructedCrc compares the reconstructed file's CRC32 with the
+// pristine-original CRC32 recorded on the very first edit, logging to log.
+func CheckReconstructedCrc(r *Reversal, finalCrc uint32, w io.Writer) error {
+	log := logger{w}
 	expected, err := entryU32(r.entries, "PCRC")
 	if err != nil {
 		return err
@@ -2182,7 +2186,7 @@ func ReverseRotation(data []byte, opts ReverseOptions) ([]byte, error) {
 		out = append(out, chunk...)
 		crc = crc32.Update(crc, crc32.IEEETable, chunk)
 	}
-	if err := checkReconstructedCrc(r, crc, log); err != nil {
+	if err := CheckReconstructedCrc(r, crc, log.w); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -2206,7 +2210,7 @@ func VerifyReversible(data []byte, opts ReverseOptions) error {
 	for chunk := range reconstructedChunks(data, r) {
 		crc = crc32.Update(crc, crc32.IEEETable, chunk)
 	}
-	return checkReconstructedCrc(r, crc, log)
+	return CheckReconstructedCrc(r, crc, log.w)
 }
 
 // ---------------------------------------------------------------------------
@@ -2408,7 +2412,7 @@ func VerifyStructure(data []byte) error {
 		return nil
 	}
 
-	top, err := listBoxes(data, 0, len(data))
+	top, err := ListBoxes(data, 0, len(data))
 	if err != nil {
 		return err
 	}

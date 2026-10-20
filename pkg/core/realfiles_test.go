@@ -1,4 +1,4 @@
-package heicrotate
+package core_test
 
 // ---------------------------------------------------------------------------
 // 4. Real-file tests - auto-skip if not present
@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
 )
 
 const (
@@ -74,9 +76,9 @@ func TestRealFiles(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				rotated := mustApply(t, original, 1)
-				mustVerifyStructure(t, rotated)
-				restored := mustReverse(t, rotated)
+				rotated := tests.MustApply(t, original, 1)
+				tests.MustVerifyStructure(t, rotated)
+				restored := tests.MustReverse(t, rotated)
 				if !bytes.Equal(restored, original) {
 					t.Errorf("%s: reverse did not reconstruct the exact original", name)
 				}
@@ -105,8 +107,8 @@ func TestRealFiles(t *testing.T) {
 			ext := filepath.Ext(name)
 			stem := strings.TrimSuffix(name, ext)
 			for _, angle := range []int{0, 90, 180, 270} {
-				rotated := mustApply(t, original, angle/90%4)
-				mustVerifyStructure(t, rotated)
+				rotated := tests.MustApply(t, original, angle/90%4)
+				tests.MustVerifyStructure(t, rotated)
 				out := filepath.Join(rotatedDir, fmt.Sprintf("%s_rot%d%s", stem, angle, ext))
 				if err := os.WriteFile(out, rotated, 0o644); err != nil {
 					t.Fatal(err)

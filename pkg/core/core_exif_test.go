@@ -1,4 +1,4 @@
-package heicrotate
+package core_test
 
 import (
 	"bytes"
@@ -7,13 +7,15 @@ import (
 
 	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 )
 
 // metaBounds returns (meta_body_start, meta content end) without
 // LocateStructures, so these tests don't depend on later sections.
 func metaBounds(t *testing.T, data []byte) (int, int) {
 	t.Helper()
-	meta, ok, err := FindChild(data, 0, len(data), "meta")
+	meta, ok, err := core.FindChild(data, 0, len(data), "meta")
 	if err != nil || !ok {
 		t.Fatalf("no meta: %v", err)
 	}
@@ -24,18 +26,18 @@ func TestFindExifOrientationField(t *testing.T) {
 	for _, layout := range []synth.Layout{synth.MdatFirst, synth.MetaFirst} {
 		for _, pos := range []synth.ExifPosition{synth.ExifEnd, synth.ExifMiddle} {
 			t.Run(string(layout)+"/"+string(pos), func(t *testing.T) {
-				data := mustSynth(t, func(o *synth.Options) {
+				data := tests.MustSynth(t, func(o *synth.Options) {
 					o.Layout, o.ExifPosition, o.IncludeExif, o.ExifOrientation = layout, pos, true, 6
 				})
 				mbs, mce := metaBounds(t, data)
-				loc, ok, err := FindExifItemLocation(data, mbs, mce)
+				loc, ok, err := core.FindExifItemLocation(data, mbs, mce)
 				if err != nil || !ok || loc.ItemID != 2 {
 					t.Fatalf("FindExifItemLocation = %+v, %v, %v", loc, ok, err)
 				}
 				if !bytes.HasPrefix(data[loc.AbsStart:], []byte("\x00\x00\x00\x06Exif\x00\x00II*\x00")) {
 					t.Fatalf("location doesn't point at the Exif blob")
 				}
-				field, ok, err := FindExifOrientationField(data, mbs, mce)
+				field, ok, err := core.FindExifOrientationField(data, mbs, mce)
 				// 4-byte header offset + "Exif\0\0" + TIFF header (8) + count (2) + tag/type/count (8)
 				wantOffset := int(loc.AbsStart) + 4 + 6 + 8 + 2 + 8
 				if err != nil || !ok || field.Value != 6 || field.AbsOffset != wantOffset || field.ByteOrder != binary.LittleEndian {
@@ -59,7 +61,7 @@ func rewriteTIFF(t *testing.T, data []byte, tiff []byte) []byte {
 }
 
 func TestFindExifOrientationFieldVariants(t *testing.T) {
-	base := mustSynth(t, func(o *synth.Options) { o.IncludeExif = true })
+	base := tests.MustSynth(t, func(o *synth.Options) { o.IncludeExif = true })
 	mbs, mce := metaBounds(t, base)
 
 	be := binary.BigEndian
@@ -70,26 +72,26 @@ func TestFindExifOrientationFieldVariants(t *testing.T) {
 	mm = be.AppendUint16(mm, 3)
 	mm = be.AppendUint32(mm, 1)
 	mm = append(be.AppendUint16(mm, 8), 0, 0, 0, 0, 0, 0)
-	field, ok, err := FindExifOrientationField(rewriteTIFF(t, base, mm), mbs, mce)
+	field, ok, err := core.FindExifOrientationField(rewriteTIFF(t, base, mm), mbs, mce)
 	if err != nil || !ok || field.Value != 8 || field.ByteOrder != binary.BigEndian {
 		t.Errorf("MM: %+v, %v, %v; want value 8 (MM)", field, ok, err)
 	}
 
 	noTag := bytes.Clone(mm)
 	be.PutUint16(noTag[10:], 0x0110) // a different tag
-	if _, ok, err := FindExifOrientationField(rewriteTIFF(t, base, noTag), mbs, mce); err != nil || ok {
+	if _, ok, err := core.FindExifOrientationField(rewriteTIFF(t, base, noTag), mbs, mce); err != nil || ok {
 		t.Errorf("no Orientation tag: ok=%v err=%v; want not found", ok, err)
 	}
 
 	badMagic := bytes.Clone(mm)
 	copy(badMagic, "XX")
-	if _, ok, err := FindExifOrientationField(rewriteTIFF(t, base, badMagic), mbs, mce); err != nil || ok {
+	if _, ok, err := core.FindExifOrientationField(rewriteTIFF(t, base, badMagic), mbs, mce); err != nil || ok {
 		t.Errorf("bad byte-order mark: ok=%v err=%v; want not found", ok, err)
 	}
 
 	farIFD := bytes.Clone(mm)
 	be.PutUint32(farIFD[4:], 1<<31) // IFD0 offset past the blob
-	if _, ok, err := FindExifOrientationField(rewriteTIFF(t, base, farIFD), mbs, mce); err != nil || ok {
+	if _, ok, err := core.FindExifOrientationField(rewriteTIFF(t, base, farIFD), mbs, mce); err != nil || ok {
 		t.Errorf("IFD0 past blob: ok=%v err=%v; want not found", ok, err)
 	}
 }

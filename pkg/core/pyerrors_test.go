@@ -1,4 +1,4 @@
-package heicrotate
+package core
 
 import (
 	"errors"

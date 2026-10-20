@@ -15,6 +15,7 @@ import (
 
 	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
@@ -130,7 +131,7 @@ func buildParser(prog string) *parser {
 			"contribution is 0 deg (e.g. `rotate 0` was used " +
 			"just to add tracking, or opposing rotations " +
 			"cancelled out). A genuine error " +
-			fmt.Sprintf("(e.g. unreadable file) exits %d, ", heicrotate.ErrorExitCode) +
+			fmt.Sprintf("(e.g. unreadable file) exits %d, ", core.ErrorExitCode) +
 			"kept outside 0-4 so it's never mistaken for a " +
 			"rotation-state result.",
 		opts: []option{
@@ -157,7 +158,7 @@ func buildParser(prog string) *parser {
 				"if it already exists (refused by default)"},
 		},
 		subcommands: []*parser{rotate, reverse, info},
-		version:     heicrotate.VersionString,
+		version:     core.VersionString,
 		goVersion:   version.GoVersionString,
 	}
 }
@@ -197,7 +198,7 @@ func insertImplicitRotate(argv []string) []string {
 //	0       rotate/reverse succeeded, or -h/-V/-G
 //	0-4     info: see FormatInfo
 //	2       usage error, or no arguments at all (help is printed to stdout)
-//	10      a genuine error (heicrotate.ErrorExitCode)
+//	10      a genuine error (core.ErrorExitCode)
 func Main(argv []string, stdout, stderr io.Writer) int {
 	prog := "heic-lossless-rotate"
 	if len(argv) > 0 {
@@ -220,7 +221,7 @@ func Main(argv []string, stdout, stderr io.Writer) int {
 	code, err := run(a, stdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %s\n", errorText(err))
-		return heicrotate.ErrorExitCode
+		return core.ErrorExitCode
 	}
 	return code
 }
@@ -228,8 +229,8 @@ func Main(argv []string, stdout, stderr io.Writer) int {
 // errorText renders an error the way Python's f"error: {e}" does for the
 // exception types main() catches.
 func errorText(err error) string {
-	var be *heicrotate.BoxParseError
-	var pe *heicrotate.ProvenanceError
+	var be *core.BoxParseError
+	var pe *core.ProvenanceError
 	var exists *heicrotate.OutputExistsError
 	switch {
 	case errors.As(err, &be):
@@ -253,7 +254,7 @@ func run(a *args, stdout io.Writer) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		text, exitCode := heicrotate.FormatInfo(result, a.quiet)
+		text, exitCode := core.FormatInfo(result, a.quiet)
 		if text != "" {
 			fmt.Fprintln(stdout, text)
 		}

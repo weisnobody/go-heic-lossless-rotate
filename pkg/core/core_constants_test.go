@@ -1,4 +1,4 @@
-package heicrotate
+package core_test
 
 import (
 	"crypto/sha1"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
@@ -20,13 +21,13 @@ func TestProvenanceUUIDDerivation(t *testing.T) {
 	copy(want[:], h[:16])
 	want[6] = want[6]&0x0f | 0x50 // version 5
 	want[8] = want[8]&0x3f | 0x80 // RFC 4122 variant
-	if ProvenanceUUID != want {
-		t.Fatalf("ProvenanceUUID = %x, want %x", ProvenanceUUID, want)
+	if core.ProvenanceUUID != want {
+		t.Fatalf("ProvenanceUUID = %x, want %x", core.ProvenanceUUID, want)
 	}
 }
 
 func TestVersionTuple(t *testing.T) {
-	got, err := versionTuple()
+	got, err := core.VersionTuple()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,26 +40,26 @@ func TestVersionString(t *testing.T) {
 	want := "heic-lossless-rotate 1.7.1\n" +
 		"metadata (provenance) format version: 2\n" +
 		"metadata format versions supported by reverse: 1, 2"
-	if got := VersionString(); got != want {
+	if got := core.VersionString(); got != want {
 		t.Errorf("VersionString() =\n%s\nwant\n%s", got, want)
 	}
 }
 
 func TestErrorTypes(t *testing.T) {
 	cause := errors.New("cause")
-	var err error = &ProvenanceError{Msg: "outer", Err: cause}
+	var err error = &core.ProvenanceError{Msg: "outer", Err: cause}
 	if err.Error() != "outer" || !errors.Is(err, cause) {
 		t.Errorf("ProvenanceError: Error()=%q, Is(cause)=%v", err.Error(), errors.Is(err, cause))
 	}
-	var pe *ProvenanceError
+	var pe *core.ProvenanceError
 	if !errors.As(err, &pe) {
 		t.Error("errors.As(*ProvenanceError) failed")
 	}
-	if pe := provenanceErrorf("missing %s", "CCRC"); pe.Msg != "missing CCRC" || pe.Err != nil {
+	if pe := core.ProvenanceErrorf("missing %s", "CCRC"); pe.Msg != "missing CCRC" || pe.Err != nil {
 		t.Errorf("provenanceErrorf: %#v", pe)
 	}
-	err = boxParseErrorf("bad %s", "box")
-	var be *BoxParseError
+	err = core.BoxParseErrorf("bad %s", "box")
+	var be *core.BoxParseError
 	if !errors.As(err, &be) || be.Msg != "bad box" || errors.Unwrap(err) != nil {
 		t.Errorf("BoxParseError: %#v", err)
 	}

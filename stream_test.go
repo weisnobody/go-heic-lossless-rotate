@@ -18,11 +18,13 @@ import (
 
 	"github.com/pjg/go-heic-lossless-rotate/internal/craft"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 )
 
 func errString(err error) string {
-	var be *BoxParseError
-	var pe *ProvenanceError
+	var be *core.BoxParseError
+	var pe *core.ProvenanceError
 	switch {
 	case err == nil:
 		return ""
@@ -37,7 +39,7 @@ func errString(err error) string {
 type outcome struct {
 	out  []byte
 	log  string
-	info *Info
+	info *core.Info
 	err  string
 }
 
@@ -87,8 +89,8 @@ func crossCheck(t *testing.T, data []byte) (string, int) {
 	for turns := range 4 {
 		for _, sync := range []bool{true, false} {
 			var ml, sl bytes.Buffer
-			mo, merr := ApplyRotation(data, turns, RotateOptions{NoExifSync: !sync, Log: &ml})
-			v, serr := ApplyRotationReaderAt(r, n, turns, RotateOptions{NoExifSync: !sync, Log: &sl})
+			mo, merr := core.ApplyRotation(data, turns, core.RotateOptions{NoExifSync: !sync, Log: &ml})
+			v, serr := ApplyRotationReaderAt(r, n, turns, core.RotateOptions{NoExifSync: !sync, Log: &sl})
 			settle(merr == nil)
 			op := fmt.Sprintf("apply(%d, sync=%v)", turns, sync)
 			if d := compare(op, outcome{out: mo, log: ml.String(), err: errString(merr)},
@@ -96,7 +98,7 @@ func crossCheck(t *testing.T, data []byte) (string, int) {
 				return d, fallbacks
 			}
 			if v != nil {
-				a, b := errString(VerifyStructure(mo)), errString(verifyStructureView(v))
+				a, b := errString(core.VerifyStructure(mo)), errString(verifyStructureView(v))
 				settle(a == "")
 				if a != b {
 					return fmt.Sprintf("%s: VerifyStructure %q vs %q", op, a, b), fallbacks
@@ -106,8 +108,8 @@ func crossCheck(t *testing.T, data []byte) (string, int) {
 	}
 	for _, force := range []bool{false, true} {
 		var ml, sl bytes.Buffer
-		mo, merr := ReverseRotation(data, ReverseOptions{IgnoreTamper: force, Log: &ml})
-		v, serr := ReverseRotationReaderAt(r, n, ReverseOptions{IgnoreTamper: force, Log: &sl})
+		mo, merr := core.ReverseRotation(data, core.ReverseOptions{IgnoreTamper: force, Log: &ml})
+		v, serr := ReverseRotationReaderAt(r, n, core.ReverseOptions{IgnoreTamper: force, Log: &sl})
 		settle(merr == nil)
 		if d := compare(fmt.Sprintf("reverse(force=%v)", force), outcome{out: mo, log: ml.String(), err: errString(merr)},
 			outcome{out: viewBytes(t, v), log: sl.String(), err: errString(serr)}); d != "" {
@@ -115,15 +117,15 @@ func crossCheck(t *testing.T, data []byte) (string, int) {
 		}
 		ml.Reset()
 		sl.Reset()
-		merr = VerifyReversible(data, ReverseOptions{IgnoreTamper: force, Log: &ml})
-		serr = VerifyReversibleReaderAt(r, n, ReverseOptions{IgnoreTamper: force, Log: &sl})
+		merr = core.VerifyReversible(data, core.ReverseOptions{IgnoreTamper: force, Log: &ml})
+		serr = VerifyReversibleReaderAt(r, n, core.ReverseOptions{IgnoreTamper: force, Log: &sl})
 		settle(merr == nil)
 		if d := compare(fmt.Sprintf("verify(force=%v)", force), outcome{log: ml.String(), err: errString(merr)},
 			outcome{log: sl.String(), err: errString(serr)}); d != "" {
 			return d, fallbacks
 		}
 	}
-	mi, merr := GatherInfo(data)
+	mi, merr := core.GatherInfo(data)
 	si, serr := GatherInfoReaderAt(r, n)
 	settle(merr == nil)
 	if d := compare("info", outcome{info: mi, err: errString(merr)}, outcome{info: si, err: errString(serr)}); d != "" {
@@ -145,7 +147,7 @@ func crossCorpus(t *testing.T) []crossGroup {
 			for _, exif := range []string{"none", "end", "middle"} {
 				for _, extra := range []bool{false, true} {
 					name := fmt.Sprintf("%s/irot=%d/exif=%s/extra=%v", layout, irot, exif, extra)
-					d := mustSynth(t, func(o *synth.Options) {
+					d := tests.MustSynth(t, func(o *synth.Options) {
 						o.Layout, o.ExtraMdat = layout, extra
 						o.IncludeIrot, o.IrotValue = irot >= 0, max(irot, 0)
 						if exif != "none" {
@@ -153,17 +155,17 @@ func crossCorpus(t *testing.T) []crossGroup {
 						}
 					})
 					synthIn[name] = d
-					r1 := mustApply(t, d, 1)
+					r1 := tests.MustApply(t, d, 1)
 					rotated[name] = r1
-					twice[name] = mustApply(t, r1, 3)
-					legacy[name+"/no-tver"] = stripProvenanceTag(t, r1, "TVER")
+					twice[name] = tests.MustApply(t, r1, 3)
+					legacy[name+"/no-tver"] = tests.StripProvenanceTag(t, r1, "TVER")
 					if layout == synth.MdatFirst {
-						legacy[name+"/v1"] = makeV1StyleRecord(t, d, r1)
+						legacy[name+"/v1"] = tests.MakeV1StyleRecord(t, d, r1)
 					}
 					tf := bytes.Clone(r1)
 					tf[10] ^= 0xFF
 					tamper[name+"/ftyp"] = tf
-					for i, c := range ipcoChildrenOf(t, r1) {
+					for i, c := range tests.IpcoChildrenOf(t, r1) {
 						tc := bytes.Clone(r1)
 						tc[c.ContentStart] ^= 0xFF
 						tamper[fmt.Sprintf("%s/ipco%d", name, i)] = tc
@@ -174,27 +176,27 @@ func crossCorpus(t *testing.T) []crossGroup {
 	}
 	large := map[string][]byte{}
 	for _, layout := range []synth.Layout{synth.MdatFirst, synth.MetaFirst} {
-		d := mustSynth(t, func(o *synth.Options) {
-			o.Layout, o.MdatPayload, o.IncludeExif, o.ExifPosition = layout, cyclicPayload(2<<20), true, synth.ExifMiddle
+		d := tests.MustSynth(t, func(o *synth.Options) {
+			o.Layout, o.MdatPayload, o.IncludeExif, o.ExifPosition = layout, tests.CyclicPayload(2<<20), true, synth.ExifMiddle
 		})
 		large[string(layout)] = d
-		large[string(layout)+"/rotated"] = mustApply(t, d, 1)
+		large[string(layout)+"/rotated"] = tests.MustApply(t, d, 1)
 	}
 	crafted := map[string][]byte{}
 	for name, o := range craft.Variants() {
 		d := craft.Build(o)
 		crafted[name] = d
-		if r, err := ApplyRotation(d, 1, RotateOptions{}); err == nil {
+		if r, err := core.ApplyRotation(d, 1, core.RotateOptions{}); err == nil {
 			crafted[name+"/rotated"] = r
 		}
 	}
 	corrupt := map[string][]byte{}
 	for _, layout := range []synth.Layout{synth.MdatFirst, synth.MetaFirst} {
 		for _, irot := range []bool{false, true} {
-			d := mustSynth(t, func(o *synth.Options) {
+			d := tests.MustSynth(t, func(o *synth.Options) {
 				o.Layout, o.IncludeIrot, o.IncludeExif, o.ExifPosition = layout, irot, true, synth.ExifMiddle
 			})
-			for _, base := range [][]byte{d, mustApply(t, d, 1)} {
+			for _, base := range [][]byte{d, tests.MustApply(t, d, 1)} {
 				for i := range base {
 					for _, m := range []byte{0xFF, 0x01} {
 						b := bytes.Clone(base)
@@ -256,7 +258,7 @@ func TestRotateFileSameFileHardLinked(t *testing.T) {
 	dir := t.TempDir()
 	path, other := filepath.Join(dir, "photo.heic"), filepath.Join(dir, "link.heic")
 	original := writeSynth(t, path, func(o *synth.Options) {
-		o.Layout, o.IncludeExif, o.MdatPayload = synth.MetaFirst, true, cyclicPayload(256<<10)
+		o.Layout, o.IncludeExif, o.MdatPayload = synth.MetaFirst, true, tests.CyclicPayload(256<<10)
 	})
 	if err := os.Link(path, other); err != nil {
 		t.Skipf("hard links unavailable: %v", err)
@@ -264,7 +266,7 @@ func TestRotateFileSameFileHardLinked(t *testing.T) {
 	if _, err := RotateFile(path, path, 1, FileOptions{Force: true}); err != nil {
 		t.Fatal(err)
 	}
-	want := mustApply(t, original, 1)
+	want := tests.MustApply(t, original, 1)
 	if !bytes.Equal(mustRead(t, path), want) || !bytes.Equal(mustRead(t, other), want) {
 		t.Error("in-place rotate of a hard-linked file corrupted it or broke the link")
 	}
@@ -277,7 +279,7 @@ func TestRotateFileSameFileHardLinked(t *testing.T) {
 }
 
 func TestFileAPIHeapBound(t *testing.T) {
-	if raceEnabled || testing.Short() {
+	if tests.RaceEnabled || testing.Short() {
 		t.Skip("allocation counts are inflated under -race; large file")
 	}
 	const payload = 64 << 20
@@ -286,16 +288,16 @@ func TestFileAPIHeapBound(t *testing.T) {
 			dir := t.TempDir()
 			in, rotated, restored := filepath.Join(dir, "in.heic"), filepath.Join(dir, "r.heic"), filepath.Join(dir, "back.heic")
 			writeSynth(t, in, func(o *synth.Options) {
-				o.Layout, o.IncludeExif, o.ExifPosition, o.MdatPayload = layout, true, synth.ExifMiddle, cyclicPayload(payload)
+				o.Layout, o.IncludeExif, o.ExifPosition, o.MdatPayload = layout, true, synth.ExifMiddle, tests.CyclicPayload(payload)
 			})
 			start := time.Now()
-			rot := allocatedBytes(func() {
+			rot := tests.AllocatedBytes(func() {
 				if _, err := RotateFile(in, rotated, 1, FileOptions{}); err != nil {
 					t.Fatal(err)
 				}
 			})
 			rotTime := time.Since(start)
-			rev := allocatedBytes(func() {
+			rev := tests.AllocatedBytes(func() {
 				if _, err := ReverseFile(rotated, restored, FileOptions{}); err != nil {
 					t.Fatal(err)
 				}

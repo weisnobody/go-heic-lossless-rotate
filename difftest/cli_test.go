@@ -24,9 +24,9 @@ import (
 	"strings"
 	"testing"
 
-	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/cli"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
@@ -140,7 +140,7 @@ func compareCLI(c cliCase, py, gor cliOutcome, pyTree, goTree map[string]string)
 	}
 
 	if py.Code == 1 && strings.Contains(py.Stderr, "Traceback") { // D2
-		if gor.Code != heicrotate.ErrorExitCode || !strings.HasPrefix(gor.Stderr, "error: ") {
+		if gor.Code != core.ErrorExitCode || !strings.HasPrefix(gor.Stderr, "error: ") {
 			return fmt.Sprintf("D2: python traceback, go exit %d stderr %q", gor.Code, gor.Stderr)
 		}
 	} else {
@@ -328,7 +328,7 @@ func TestCLIMatchesPython(t *testing.T) {
 
 	// 4. Errors: missing files, directories, unwritable outputs, malformed
 	//    input (including D2 crashes), and D1 naming.
-	pcrcShort := editProvenance(t, mustApply(t, fixtures[0].data, 1), func(_ *uint8, e heicrotate.ProvenanceEntries) {
+	pcrcShort := editProvenance(t, mustApply(t, fixtures[0].data, 1), func(_ *uint8, e core.ProvenanceEntries) {
 		e["PCRC"] = e["PCRC"][:3]
 	})
 	errSet := files(map[string][]byte{"in.heic": fixtures[0].data, "adir": nil, "empty.heic": {}, "junk.heic": []byte("not a heic file"),

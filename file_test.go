@@ -14,11 +14,13 @@ import (
 
 	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 )
 
 func writeSynth(t *testing.T, path string, mutate func(*synth.Options)) []byte {
 	t.Helper()
-	data := mustSynth(t, mutate)
+	data := tests.MustSynth(t, mutate)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +59,7 @@ func TestRotateAndReverseFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantOut := filepath.Join(dir, "photo_rotated.heic")
-	want := mustApply(t, original, 1)
+	want := tests.MustApply(t, original, 1)
 	if *res != (Result{Output: wantOut, Size: len(want), InputSize: len(original)}) {
 		t.Errorf("Result = %+v", *res)
 	}
@@ -66,7 +68,7 @@ func TestRotateAndReverseFile(t *testing.T) {
 	}
 	// The log is exactly the CLI's stdout: the core's lines, then _run's.
 	var coreLog bytes.Buffer
-	ApplyRotation(original, 1, RotateOptions{Log: &coreLog})
+	core.ApplyRotation(original, 1, core.RotateOptions{Log: &coreLog})
 	wantLog := coreLog.String() +
 		"[ok] output box structure is internally consistent\n" +
 		"[ok] reversibility self-check passed - output can be fully reversed back to the original file\n" +
@@ -116,7 +118,7 @@ func TestOverwriteRefusalAndForce(t *testing.T) {
 	if _, err := RotateFile(in, out, 1, FileOptions{Force: true}); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(mustRead(t, out), mustApply(t, original, 1)) {
+	if !bytes.Equal(mustRead(t, out), tests.MustApply(t, original, 1)) {
 		t.Error("Force didn't overwrite")
 	}
 	// Dry run still refuses an existing output without Force, as Python does.
@@ -137,8 +139,8 @@ func TestSameFileInputOutput(t *testing.T) {
 		if bytes.Equal(result, original) {
 			t.Fatal("file unchanged")
 		}
-		mustVerifyStructure(t, result)
-		if !bytes.Equal(mustReverse(t, result), original) {
+		tests.MustVerifyStructure(t, result)
+		if !bytes.Equal(tests.MustReverse(t, result), original) {
 			t.Error("rotating a file onto itself must still produce a fully reversible result")
 		}
 	})
@@ -162,8 +164,8 @@ func TestSameFileInputOutput(t *testing.T) {
 func TestDryRunSizeReport(t *testing.T) {
 	dir := t.TempDir()
 	in, out := filepath.Join(dir, "input.heic"), filepath.Join(dir, "out.heic")
-	original := writeSynth(t, in, func(o *synth.Options) { o.MdatPayload = cyclicPayload(64 << 10) })
-	expected := mustApply(t, original, 1)
+	original := writeSynth(t, in, func(o *synth.Options) { o.MdatPayload = tests.CyclicPayload(64 << 10) })
+	expected := tests.MustApply(t, original, 1)
 	var log bytes.Buffer
 	res, err := RotateFile(in, out, 1, FileOptions{DryRun: true, Log: &log})
 	if err != nil {
@@ -190,10 +192,10 @@ func TestRotateFileSelfCheckAbortsAndWritesNothingOnFailure(t *testing.T) {
 	writeSynth(t, in, nil)
 	real := verifyReversibleHook
 	t.Cleanup(func() { verifyReversibleHook = real })
-	verifyReversibleHook = func(*View) error { return &ProvenanceError{Msg: "simulated failure"} }
+	verifyReversibleHook = func(*View) error { return &core.ProvenanceError{Msg: "simulated failure"} }
 
 	_, err := RotateFile(in, out, 1, FileOptions{})
-	var pe *ProvenanceError
+	var pe *core.ProvenanceError
 	if !errors.As(err, &pe) || pe.Msg != "post-rotate reversibility self-check failed - refusing to write output: simulated failure" {
 		t.Errorf("err = %v", err)
 	}
@@ -236,7 +238,7 @@ func rotateOnto(t *testing.T, out string) ([]byte, error) {
 	in := filepath.Join(t.TempDir(), "in.heic")
 	original := writeSynth(t, in, nil)
 	_, err := RotateFile(in, out, 1, FileOptions{Force: true})
-	return mustApply(t, original, 1), err
+	return tests.MustApply(t, original, 1), err
 }
 
 func TestWriteNewFileModeMatchesPython(t *testing.T) {

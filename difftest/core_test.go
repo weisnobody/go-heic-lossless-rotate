@@ -17,10 +17,10 @@ import (
 	"strings"
 	"testing"
 
-	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/internal/craft"
 	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 )
 
 // goResult is one Go-side outcome, in the shape pydriver.py reports.
@@ -67,7 +67,7 @@ func (c *corpus) add(group, op string, args map[string]any, inputArgs map[string
 func goApply(data []byte, turns int, sync bool) func() goResult {
 	return func() goResult {
 		var log bytes.Buffer
-		out, err := heicrotate.ApplyRotation(data, turns, heicrotate.RotateOptions{NoExifSync: !sync, Log: &log})
+		out, err := core.ApplyRotation(data, turns, core.RotateOptions{NoExifSync: !sync, Log: &log})
 		return goResult{out: out, hasOut: true, log: log.String(), err: err}
 	}
 }
@@ -75,7 +75,7 @@ func goApply(data []byte, turns int, sync bool) func() goResult {
 func goReverse(data []byte, force bool) func() goResult {
 	return func() goResult {
 		var log bytes.Buffer
-		out, err := heicrotate.ReverseRotation(data, heicrotate.ReverseOptions{IgnoreTamper: force, Log: &log})
+		out, err := core.ReverseRotation(data, core.ReverseOptions{IgnoreTamper: force, Log: &log})
 		return goResult{out: out, hasOut: true, log: log.String(), err: err}
 	}
 }
@@ -83,13 +83,13 @@ func goReverse(data []byte, force bool) func() goResult {
 func goVerify(data []byte, force bool) func() goResult {
 	return func() goResult {
 		var log bytes.Buffer
-		err := heicrotate.VerifyReversible(data, heicrotate.ReverseOptions{IgnoreTamper: force, Log: &log})
+		err := core.VerifyReversible(data, core.ReverseOptions{IgnoreTamper: force, Log: &log})
 		return goResult{log: log.String(), err: err}
 	}
 }
 
 // infoDict renders Info as gather_info's dict (absent keys omitted).
-func infoDict(i *heicrotate.Info) map[string]any {
+func infoDict(i *core.Info) map[string]any {
 	m := map[string]any{"current_quarter_turns": i.CurrentQuarterTurns, "has_provenance": i.HasProvenance}
 	if !i.HasProvenance {
 		return m
@@ -113,12 +113,12 @@ func infoDict(i *heicrotate.Info) map[string]any {
 
 func goInfo(data []byte) func() goResult {
 	return func() goResult {
-		info, err := heicrotate.GatherInfo(data)
+		info, err := core.GatherInfo(data)
 		if err != nil {
 			return goResult{err: err}
 		}
-		text, code := heicrotate.FormatInfo(info, false)
-		quietText, quietCode := heicrotate.FormatInfo(info, true)
+		text, code := core.FormatInfo(info, false)
+		quietText, quietCode := core.FormatInfo(info, true)
 		var qt any
 		if quietText != "" {
 			qt = quietText
@@ -130,12 +130,12 @@ func goInfo(data []byte) func() goResult {
 }
 
 func goVerifyStructure(data []byte) func() goResult {
-	return func() goResult { return goResult{err: heicrotate.VerifyStructure(data)} }
+	return func() goResult { return goResult{err: core.VerifyStructure(data)} }
 }
 
 func goCurrentRotation(data []byte) func() goResult {
 	return func() goResult {
-		r, err := heicrotate.GetCurrentRotation(data)
+		r, err := core.GetCurrentRotation(data)
 		return goResult{json: r, hasJSON: err == nil, err: err}
 	}
 }
@@ -180,7 +180,7 @@ func mustSynth(t *testing.T, o synth.Options) []byte {
 
 func mustApply(t *testing.T, data []byte, turns int) []byte {
 	t.Helper()
-	out, err := heicrotate.ApplyRotation(data, turns, heicrotate.RotateOptions{})
+	out, err := core.ApplyRotation(data, turns, core.RotateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,18 +220,18 @@ func sortedKeys[V any](m map[string]V) []string {
 // editProvenance re-encodes a rotated MdatFirst file's provenance record
 // after mutate (the record follows mdat there, so resizing it needs no iloc
 // patching).
-func editProvenance(t *testing.T, rotated []byte, mutate func(*uint8, heicrotate.ProvenanceEntries)) []byte {
+func editProvenance(t *testing.T, rotated []byte, mutate func(*uint8, core.ProvenanceEntries)) []byte {
 	t.Helper()
-	s, err := heicrotate.LocateStructures(rotated)
+	s, err := core.LocateStructures(rotated)
 	if err != nil || s.ProvenanceHdr == nil {
 		t.Fatalf("no provenance: %v", err)
 	}
-	version, entries, err := heicrotate.ParseProvenance(rotated, *s.ProvenanceHdr)
+	version, entries, err := core.ParseProvenance(rotated, *s.ProvenanceHdr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mutate(&version, entries)
-	newBox, err := heicrotate.BuildProvenanceBox(version, entries)
+	newBox, err := core.BuildProvenanceBox(version, entries)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,12 +284,12 @@ func TestCoreMatchesPython(t *testing.T) {
 	// Upstream's tamper scenarios, on every fixture they apply to.
 	for _, name := range sortedKeys(fixtures) {
 		rot := mustApply(t, fixtures[name], 1)
-		s, err := heicrotate.LocateStructures(rot)
+		s, err := core.LocateStructures(rot)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ipco, _, _ := heicrotate.FindUniqueChild(rot, s.IprpHdr.ContentStart, s.IprpHdr.ContentEnd, "ipco", "'iprp'")
-		children, _ := heicrotate.ParseIpcoChildren(rot, ipco.ContentStart, ipco.ContentEnd)
+		ipco, _, _ := core.FindUniqueChild(rot, s.IprpHdr.ContentStart, s.IprpHdr.ContentEnd, "ipco", "'iprp'")
+		children, _ := core.ParseIpcoChildren(rot, ipco.ContentStart, ipco.ContentEnd)
 		for _, ch := range children {
 			tampered := bytes.Clone(rot)
 			tampered[ch.ContentStart] ^= 0xFF
@@ -298,7 +298,7 @@ func TestCoreMatchesPython(t *testing.T) {
 		ftyp := bytes.Clone(rot)
 		ftyp[10] ^= 0xFF
 		c.addAllOps("tamper ftyp", ftyp)
-		if field, ok, _ := heicrotate.FindExifOrientationField(rot, s.MetaBodyStart, s.MetaHdr.ContentEnd); ok {
+		if field, ok, _ := core.FindExifOrientationField(rot, s.MetaBodyStart, s.MetaHdr.ContentEnd); ok {
 			exif := bytes.Clone(rot)
 			exif[field.AbsOffset] ^= 0xFF
 			c.addAllOps("tamper exif", exif)
@@ -329,7 +329,7 @@ func TestCoreMatchesPython(t *testing.T) {
 	for _, name := range sortedKeys(craft.Variants()) {
 		data := craft.Build(craft.Variants()[name])
 		c.addAllOps("crafted", data)
-		if rot, err := heicrotate.ApplyRotation(data, 1, heicrotate.RotateOptions{}); err == nil {
+		if rot, err := core.ApplyRotation(data, 1, core.RotateOptions{}); err == nil {
 			c.addAllOps("crafted rotated", rot)
 			c.addAllOps("crafted rotated twice", mustApply(t, rot, 3))
 		}
@@ -338,28 +338,28 @@ func TestCoreMatchesPython(t *testing.T) {
 	// Edited provenance records and odd top-level arrangements.
 	for _, name := range []string{"mdat_first/irot=-1/exif=end/extra=false", "mdat_first/irot=1/exif=none/extra=true"} {
 		rot := mustApply(t, fixtures[name], 1)
-		edits := map[string]func(*uint8, heicrotate.ProvenanceEntries){
-			"OMSZ 3 bytes":  func(_ *uint8, e heicrotate.ProvenanceEntries) { e["OMSZ"] = e["OMSZ"][:3] },
-			"OIRT 2 bytes":  func(_ *uint8, e heicrotate.ProvenanceEntries) { e["OIRT"] = []byte{0, 0} },
-			"no CCRC":       func(_ *uint8, e heicrotate.ProvenanceEntries) { delete(e, "CCRC") },
-			"no PCRC":       func(_ *uint8, e heicrotate.ProvenanceEntries) { delete(e, "PCRC") },
-			"PCRC 3 bytes":  func(_ *uint8, e heicrotate.ProvenanceEntries) { e["PCRC"] = e["PCRC"][:3] },
-			"OIPF 2 bytes":  func(_ *uint8, e heicrotate.ProvenanceEntries) { e["OIPF"] = []byte{0, 0} },
-			"no OIPF":       func(_ *uint8, e heicrotate.ProvenanceEntries) { delete(e, "OIPF") },
-			"no OMSZ":       func(_ *uint8, e heicrotate.ProvenanceEntries) { delete(e, "OMSZ") },
-			"no OIRT":       func(_ *uint8, e heicrotate.ProvenanceEntries) { delete(e, "OIRT") },
-			"TVER 2 bytes":  func(_ *uint8, e heicrotate.ProvenanceEntries) { e["TVER"] = []byte{1, 7} },
-			"unknown tag":   func(_ *uint8, e heicrotate.ProvenanceEntries) { e["ZZZZ"] = []byte("future") },
-			"version 0":     func(v *uint8, _ heicrotate.ProvenanceEntries) { *v = 0 },
-			"version 3":     func(v *uint8, _ heicrotate.ProvenanceEntries) { *v = 3 },
-			"OEXO 1 byte":   func(_ *uint8, e heicrotate.ProvenanceEntries) { e["OEXO"] = []byte{1} },
-			"OILC truncate": func(_ *uint8, e heicrotate.ProvenanceEntries) { e["OILC"] = e["OILC"][:4] },
+		edits := map[string]func(*uint8, core.ProvenanceEntries){
+			"OMSZ 3 bytes":  func(_ *uint8, e core.ProvenanceEntries) { e["OMSZ"] = e["OMSZ"][:3] },
+			"OIRT 2 bytes":  func(_ *uint8, e core.ProvenanceEntries) { e["OIRT"] = []byte{0, 0} },
+			"no CCRC":       func(_ *uint8, e core.ProvenanceEntries) { delete(e, "CCRC") },
+			"no PCRC":       func(_ *uint8, e core.ProvenanceEntries) { delete(e, "PCRC") },
+			"PCRC 3 bytes":  func(_ *uint8, e core.ProvenanceEntries) { e["PCRC"] = e["PCRC"][:3] },
+			"OIPF 2 bytes":  func(_ *uint8, e core.ProvenanceEntries) { e["OIPF"] = []byte{0, 0} },
+			"no OIPF":       func(_ *uint8, e core.ProvenanceEntries) { delete(e, "OIPF") },
+			"no OMSZ":       func(_ *uint8, e core.ProvenanceEntries) { delete(e, "OMSZ") },
+			"no OIRT":       func(_ *uint8, e core.ProvenanceEntries) { delete(e, "OIRT") },
+			"TVER 2 bytes":  func(_ *uint8, e core.ProvenanceEntries) { e["TVER"] = []byte{1, 7} },
+			"unknown tag":   func(_ *uint8, e core.ProvenanceEntries) { e["ZZZZ"] = []byte("future") },
+			"version 0":     func(v *uint8, _ core.ProvenanceEntries) { *v = 0 },
+			"version 3":     func(v *uint8, _ core.ProvenanceEntries) { *v = 3 },
+			"OEXO 1 byte":   func(_ *uint8, e core.ProvenanceEntries) { e["OEXO"] = []byte{1} },
+			"OILC truncate": func(_ *uint8, e core.ProvenanceEntries) { e["OILC"] = e["OILC"][:4] },
 		}
 		for _, edit := range sortedKeys(edits) {
 			c.addAllOps("provenance edits", editProvenance(t, rot, edits[edit]))
 		}
 		// uuid box moved in front of meta; zero-size 64-bit box appended.
-		s, _ := heicrotate.LocateStructures(rot)
+		s, _ := core.LocateStructures(rot)
 		p := s.ProvenanceHdr
 		moved := bytes.Join([][]byte{rot[:s.MetaHdr.Start], rot[p.Start:p.ContentEnd], rot[s.MetaHdr.Start:p.Start], rot[p.ContentEnd:]}, nil)
 		c.addAllOps("odd layout", moved)
@@ -378,7 +378,7 @@ func TestCoreMatchesPython(t *testing.T) {
 	if len(v1Reqs) > 0 {
 		v1 := legacy[v1Reqs[0].ID]
 		for name, oprp := range map[string][]byte{"OPRP truncated": nil, "OPRP not a box": []byte("garbage!garbage!")} {
-			c.addAllOps("provenance edits", editProvenance(t, v1, func(_ *uint8, e heicrotate.ProvenanceEntries) {
+			c.addAllOps("provenance edits", editProvenance(t, v1, func(_ *uint8, e core.ProvenanceEntries) {
 				if oprp == nil {
 					e["OPRP"] = e["OPRP"][:12]
 				} else {
@@ -390,7 +390,7 @@ func TestCoreMatchesPython(t *testing.T) {
 	}
 	wideOpts := craft.Variants()["mdat_first/wide_high_assoc"]
 	wideRot := mustApply(t, craft.Build(wideOpts), 1)
-	c.addAllOps("provenance edits", editProvenance(t, wideRot, func(_ *uint8, e heicrotate.ProvenanceEntries) {
+	c.addAllOps("provenance edits", editProvenance(t, wideRot, func(_ *uint8, e core.ProvenanceEntries) {
 		e["OIPF"] = []byte{0, 0, 0}
 	}))
 
@@ -399,11 +399,11 @@ func TestCoreMatchesPython(t *testing.T) {
 	// its own FullBox header.
 	base := fixtures["meta_first/irot=-1/exif=none/extra=false"]
 	c.addAllOps("odd layout", append(bytes.Clone(base), 0, 0, 0, 1, 'f', 'r', 'e', 'e', 0, 0, 0, 0))
-	ftyp, _, _ := heicrotate.FindChild(base, 0, len(base), "ftyp")
+	ftyp, _, _ := core.FindChild(base, 0, len(base), "ftyp")
 	tiny := append(bytes.Clone(base[:ftyp.ContentEnd]), 0, 0, 0, 10, 'm', 'e', 't', 'a', 0, 0)
 	c.addAllOps("odd layout", tiny)
 	{
-		s, _ := heicrotate.LocateStructures(base)
+		s, _ := core.LocateStructures(base)
 		m := s.MetaHdr
 		inner := bytes.Join([][]byte{base[m.ContentStart:m.ContentEnd], {0, 0, 0, 1, 'f', 'r', 'e', 'e'}, make([]byte, 8)}, nil)
 		withZero := bytes.Join([][]byte{base[:m.Start], craft.Box("meta", inner), base[m.ContentEnd:]}, nil)

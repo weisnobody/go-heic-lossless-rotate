@@ -16,7 +16,7 @@ import (
 	"sync"
 	"testing"
 
-	heicrotate "github.com/pjg/go-heic-lossless-rotate"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
@@ -265,8 +265,8 @@ func typed(pyErr string) bool {
 
 // goErrString renders a Go error the way pydriver.py renders a Python one.
 func goErrString(err error) string {
-	var be *heicrotate.BoxParseError
-	var pe *heicrotate.ProvenanceError
+	var be *core.BoxParseError
+	var pe *core.ProvenanceError
 	switch {
 	case err == nil:
 		return ""

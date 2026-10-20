@@ -1,4 +1,4 @@
-package heicrotate
+package core_test
 
 // Go-only robustness sweep (no Python needed): wherever upstream crashes
 // (IndexError, struct.error, KeyError, ...) or hangs, the port must return
@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 )
 
 // robustnessFixtures: both layouts x fast/slow path x original/rotated, all
@@ -23,17 +25,17 @@ func robustnessFixtures(t *testing.T) map[string][]byte {
 	fixtures := map[string][]byte{}
 	for _, layout := range []synth.Layout{synth.MdatFirst, synth.MetaFirst} {
 		for _, irot := range []bool{false, true} {
-			base := mustSynth(t, func(o *synth.Options) {
+			base := tests.MustSynth(t, func(o *synth.Options) {
 				o.Layout, o.IncludeIrot, o.IncludeExif, o.ExifPosition = layout, irot, true, synth.ExifMiddle
 			})
 			name := fmt.Sprintf("%s/irot=%v", layout, irot)
 			fixtures[name] = base
-			fixtures[name+"/rotated"] = mustApply(t, base, 1)
+			fixtures[name+"/rotated"] = tests.MustApply(t, base, 1)
 		}
 	}
-	plain := mustSynth(t, func(o *synth.Options) { o.IncludeExif = true })
-	fixtures["v1record"] = makeV1StyleRecord(t, plain, mustApply(t, plain, 1))
-	fixtures["twice"] = mustApply(t, mustApply(t, plain, 1), 3)
+	plain := tests.MustSynth(t, func(o *synth.Options) { o.IncludeExif = true })
+	fixtures["v1record"] = tests.MakeV1StyleRecord(t, plain, tests.MustApply(t, plain, 1))
+	fixtures["twice"] = tests.MustApply(t, tests.MustApply(t, plain, 1), 3)
 	return fixtures
 }
 
@@ -41,20 +43,20 @@ func robustnessFixtures(t *testing.T) map[string][]byte {
 func entryPoints(data []byte) []error {
 	var errs []error
 	for turn := 0; turn < 4; turn++ {
-		_, err := ApplyRotation(data, turn, RotateOptions{NoExifSync: turn == 2})
+		_, err := core.ApplyRotation(data, turn, core.RotateOptions{NoExifSync: turn == 2})
 		errs = append(errs, err)
 	}
 	for _, force := range []bool{false, true} {
-		_, err := ReverseRotation(data, ReverseOptions{IgnoreTamper: force})
-		errs = append(errs, err, VerifyReversible(data, ReverseOptions{IgnoreTamper: force}))
+		_, err := core.ReverseRotation(data, core.ReverseOptions{IgnoreTamper: force})
+		errs = append(errs, err, core.VerifyReversible(data, core.ReverseOptions{IgnoreTamper: force}))
 	}
-	info, err := GatherInfo(data)
+	info, err := core.GatherInfo(data)
 	if err == nil {
-		FormatInfo(info, false)
+		core.FormatInfo(info, false)
 	}
-	_, err2 := GetCurrentRotation(data)
-	_, err3 := LocateStructures(data)
-	return append(errs, err, err2, err3, VerifyStructure(data))
+	_, err2 := core.GetCurrentRotation(data)
+	_, err3 := core.LocateStructures(data)
+	return append(errs, err, err2, err3, core.VerifyStructure(data))
 }
 
 // checkNoPanic runs entryPoints on data and fails on a panic, an untyped
@@ -80,8 +82,8 @@ func checkNoPanic(t *testing.T, label string, data []byte) {
 			t.Fatalf("%s: panic: %v", label, r.panic)
 		}
 		for _, err := range r.errs {
-			var be *BoxParseError
-			var pe *ProvenanceError
+			var be *core.BoxParseError
+			var pe *core.ProvenanceError
 			if err != nil && !errors.As(err, &be) && !errors.As(err, &pe) {
 				t.Fatalf("%s: untyped error %T: %v", label, err, err)
 			}
@@ -158,8 +160,8 @@ func TestNoPanicOnCraftedEdgeCases(t *testing.T) {
 		"size smaller than header": cat(rawHeader(3, "meta"), make([]byte, 16)),
 		"extends-to-EOF meta":      cat(box("ftyp", nil), rawHeader(0, "meta"), make([]byte, 32)),
 		"64-bit meta header":       cat(box("ftyp", nil), rawHeader(1, "meta"), []byte{0, 0, 0, 0, 0, 0, 0, 24}, make([]byte, 8)),
-		"provenance-only uuid box": makeBox("uuid", ProvenanceUUID[:]),
-		"uuid before meta":         cat(box("ftyp", nil), makeBox("uuid", append(ProvenanceUUID[:], 2, 0)), box("meta", make([]byte, 4))),
+		"provenance-only uuid box": core.MakeBox("uuid", core.ProvenanceUUID[:]),
+		"uuid before meta":         cat(box("ftyp", nil), core.MakeBox("uuid", append(core.ProvenanceUUID[:], 2, 0)), box("meta", make([]byte, 4))),
 		"huge 64-bit size":         cat(rawHeader(1, "mdat"), []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}),
 		"many tiny boxes":          cat(box("ftyp", nil), box("meta", cat(make([]byte, 4), bytesRepeatBox(10000)))),
 	}

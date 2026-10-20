@@ -1,4 +1,4 @@
-// Package heicrotate losslessly and reversibly rotates HEIC/HEIF images by
+// Package core losslessly and reversibly rotates HEIC/HEIF images by
 // editing container metadata only - the 'irot' item property plus a synced
 // legacy Exif Orientation tag - never touching the encoded image data.
 //
@@ -13,4 +13,4 @@
 // See docs/SPEC.md for the compatibility contract, docs/DESIGN.md for the
 // architecture, and docs/UPSTREAM.md for the pinned upstream version and
 // the Python-to-Go function map.
-package heicrotate
+package core

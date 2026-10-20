@@ -1,4 +1,4 @@
-package heicrotate
+package core
 
 import "github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
 

@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	heicrotate "github.com/pjg/go-heic-lossless-rotate"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
 )
 
@@ -82,8 +82,8 @@ func TestCLI(t *testing.T) {
 			if rc != 0 {
 				t.Fatalf("%s: rc %d: %s", flag, rc, err)
 			}
-			want := []string{version.Version, fmt.Sprint(heicrotate.FormatVersion)}
-			for _, v := range heicrotate.SupportedReverseFormatVersions {
+			want := []string{version.Version, fmt.Sprint(core.FormatVersion)}
+			for _, v := range core.SupportedReverseFormatVersions {
 				want = append(want, fmt.Sprint(v))
 			}
 			for _, w := range want {
@@ -268,8 +268,8 @@ func TestCLI(t *testing.T) {
 	t.Run("error_exit_code_isolated_from_info_codes", func(t *testing.T) {
 		tmpdir, _ := setUp(t)
 		rc, _, _ := runCLI("info", filepath.Join(tmpdir, "nonexistent.heic"))
-		if rc != heicrotate.ErrorExitCode || (rc >= 0 && rc <= 4) {
-			t.Errorf("rc %d, want %d", rc, heicrotate.ErrorExitCode)
+		if rc != core.ErrorExitCode || (rc >= 0 && rc <= 4) {
+			t.Errorf("rc %d, want %d", rc, core.ErrorExitCode)
 		}
 	})
 }
@@ -295,10 +295,10 @@ func TestSameFileInputOutput(t *testing.T) {
 		if bytes.Equal(result, original) {
 			t.Fatal("file unchanged")
 		}
-		if err := heicrotate.VerifyStructure(result); err != nil {
+		if err := core.VerifyStructure(result); err != nil {
 			t.Fatal(err)
 		}
-		restored, err := heicrotate.ReverseRotation(result, heicrotate.ReverseOptions{})
+		restored, err := core.ReverseRotation(result, core.ReverseOptions{})
 		if err != nil || !bytes.Equal(restored, original) {
 			t.Errorf("rotating a file onto itself must still be fully reversible: %v", err)
 		}
@@ -328,7 +328,7 @@ func TestDryRunSizeReport(t *testing.T) {
 			payload[i] = byte(i)
 		}
 		original := mustSynthFile(t, input, func(o *synth.Options) { o.MdatPayload = payload })
-		expected, err := heicrotate.ApplyRotation(original, 1, heicrotate.RotateOptions{})
+		expected, err := core.ApplyRotation(original, 1, core.RotateOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -370,7 +370,7 @@ func TestErrorMessages(t *testing.T) {
 	missing := filepath.Join(tmpdir, "missing.heic")
 	rc, out, stderr := runCLI("info", missing)
 	want := "error: [Errno 2] No such file or directory: '" + missing + "'\n"
-	if rc != heicrotate.ErrorExitCode || out != "" || stderr != want {
+	if rc != core.ErrorExitCode || out != "" || stderr != want {
 		t.Errorf("missing input: rc %d, stdout %q, stderr %q; want %q", rc, out, stderr, want)
 	}
 
@@ -390,7 +390,7 @@ func TestErrorMessages(t *testing.T) {
 		t.Error("errorText fallback")
 	}
 	// Wrapped core errors print their own message, as Python's {e} does.
-	if got := errorText(&heicrotate.ProvenanceError{Msg: "post-rotate reversibility self-check failed - refusing to write output: x"}); got != "post-rotate reversibility self-check failed - refusing to write output: x" {
+	if got := errorText(&core.ProvenanceError{Msg: "post-rotate reversibility self-check failed - refusing to write output: x"}); got != "post-rotate reversibility self-check failed - refusing to write output: x" {
 		t.Errorf("errorText(ProvenanceError) = %q", got)
 	}
 }

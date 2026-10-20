@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 )
 
 // FileOptions are RotateFile's and ReverseFile's options - the CLI's flags.
@@ -62,7 +64,16 @@ func (e *OutputExistsError) Is(target error) bool { return target == fs.ErrExist
 // verifyReversibleHook is RotateFile's post-rotate self-check, indirected so
 // tests can force a failure (upstream patches cli.verify_reversible).
 var verifyReversibleHook = func(out *View) error {
-	return VerifyReversibleReaderAt(out, out.Size(), ReverseOptions{})
+	return VerifyReversibleReaderAt(out, out.Size(), core.ReverseOptions{})
+}
+
+// logger writes the CLI's stdout lines; a nil writer is silent.
+type logger struct{ w io.Writer }
+
+func (l logger) printf(format string, args ...any) {
+	if l.w != nil {
+		fmt.Fprintf(l.w, format+"\n", args...)
+	}
 }
 
 // input is an opened input file for the streaming engine.
@@ -107,7 +118,7 @@ func RotateFile(input, output string, deltaTurns int, opts FileOptions) (*Result
 	}
 	defer in.close()
 	log := logger{opts.Log}
-	out, err := ApplyRotationReaderAt(in.r, in.size, deltaTurns, RotateOptions{NoExifSync: opts.NoExifSync, Log: opts.Log})
+	out, err := ApplyRotationReaderAt(in.r, in.size, deltaTurns, core.RotateOptions{NoExifSync: opts.NoExifSync, Log: opts.Log})
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +132,7 @@ func RotateFile(input, output string, deltaTurns int, opts FileOptions) (*Result
 	// reconstructs the true original, rather than producing a file this
 	// tool claims to be able to reverse but actually can't.
 	if err := verifyReversibleHook(out); err != nil {
-		return nil, &ProvenanceError{
+		return nil, &core.ProvenanceError{
 			Msg: "post-rotate reversibility self-check failed - refusing " +
 				"to write output: " + errorMessage(err),
 			Err: err,
@@ -146,7 +157,7 @@ func ReverseFile(input, output string, opts FileOptions) (*Result, error) {
 	}
 	defer in.close()
 	log := logger{opts.Log}
-	out, err := ReverseRotationReaderAt(in.r, in.size, ReverseOptions{IgnoreTamper: opts.IgnoreTamper, Log: opts.Log})
+	out, err := ReverseRotationReaderAt(in.r, in.size, core.ReverseOptions{IgnoreTamper: opts.IgnoreTamper, Log: opts.Log})
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +172,7 @@ func ReverseFile(input, output string, opts FileOptions) (*Result, error) {
 }
 
 // InfoFile reads path and returns GatherInfo's summary of it.
-func InfoFile(path string) (*Info, error) {
+func InfoFile(path string) (*core.Info, error) {
 	in, err := openInput(path)
 	if err != nil {
 		return nil, err
@@ -172,8 +183,8 @@ func InfoFile(path string) (*Info, error) {
 
 // errorMessage is Python's str(e) for this package's error types.
 func errorMessage(err error) string {
-	var be *BoxParseError
-	var pe *ProvenanceError
+	var be *core.BoxParseError
+	var pe *core.ProvenanceError
 	switch {
 	case errors.As(err, &be):
 		return be.Msg

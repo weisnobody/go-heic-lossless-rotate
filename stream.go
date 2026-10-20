@@ -30,6 +30,7 @@ import (
 	"sort"
 
 	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
 )
 
 // exifBlobCap bounds how much of an Exif item the streaming engine reads; a
@@ -259,7 +260,7 @@ func loadStreamInput(r io.ReaderAt, size int64) (*streamInput, error) {
 				if _, err := r.ReadAt(id[:], int64(pos+headerLen)); err != nil {
 					return nil, err
 				}
-				if id == ProvenanceUUID {
+				if id == core.ProvenanceUUID {
 					prov, provEnd = pos, end
 				}
 			}
@@ -277,7 +278,7 @@ func loadStreamInput(r io.ReaderAt, size int64) (*streamInput, error) {
 	if _, err := r.ReadAt(in.span, int64(in.metaStart)); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
-	if err := VerifyStructure(in.span); err != nil {
+	if err := core.VerifyStructure(in.span); err != nil {
 		return nil, errFallback
 	}
 	if !fixedReadsFit(in.span) {
@@ -292,11 +293,11 @@ func loadStreamInput(r io.ReaderAt, size int64) (*streamInput, error) {
 // fixedReadsFit checks that the span's boxes read at fixed offsets are big
 // enough for those reads (see loadStreamInput).
 func fixedReadsFit(span []byte) bool {
-	top, err := listBoxes(span, 0, len(span))
+	top, err := core.ListBoxes(span, 0, len(span))
 	if err != nil {
 		return false
 	}
-	need := func(h BoxHeader, n int) bool { return h.ContentEnd-h.ContentStart >= n }
+	need := func(h core.BoxHeader, n int) bool { return h.ContentEnd-h.ContentStart >= n }
 	for _, t := range top {
 		if t.Is("uuid") && !need(t, 18) { // uuid + version + entry count
 			return false
@@ -304,7 +305,7 @@ func fixedReadsFit(span []byte) bool {
 		if !t.Is("meta") {
 			continue
 		}
-		children, err := listBoxes(span, t.ContentStart+4, t.ContentEnd)
+		children, err := core.ListBoxes(span, t.ContentStart+4, t.ContentEnd)
 		if err != nil {
 			return false
 		}
@@ -322,7 +323,7 @@ func fixedReadsFit(span []byte) bool {
 				if span[c.ContentStart] != 0 {
 					skip = 8
 				}
-				infes, err := listBoxes(span, c.ContentStart+skip, c.ContentEnd)
+				infes, err := core.ListBoxes(span, c.ContentStart+skip, c.ContentEnd)
 				if err != nil {
 					return false
 				}
@@ -338,7 +339,7 @@ func fixedReadsFit(span []byte) bool {
 					}
 				}
 			case c.Is("iprp"):
-				parts, err := listBoxes(span, c.ContentStart, c.ContentEnd)
+				parts, err := core.ListBoxes(span, c.ContentStart, c.ContentEnd)
 				if err != nil {
 					return false
 				}
@@ -346,7 +347,7 @@ func fixedReadsFit(span []byte) bool {
 					if !part.Is("ipco") {
 						continue
 					}
-					props, err := listBoxes(span, part.ContentStart, part.ContentEnd)
+					props, err := core.ListBoxes(span, part.ContentStart, part.ContentEnd)
 					if err != nil {
 						return false
 					}
@@ -366,14 +367,14 @@ func fixedReadsFit(span []byte) bool {
 // outside the span, so reads of item data (the Exif blob) never land in
 // bytes the edit rewrites.
 func checkExtentsOutside(in *streamInput) error {
-	s, err := LocateStructures(in.span)
+	s, err := core.LocateStructures(in.span)
 	if err != nil {
 		return errFallback
 	}
 	if s.IlocHdr == nil {
 		return nil
 	}
-	iloc, err := ParseIloc(in.span, s.IlocHdr.ContentStart, s.IlocHdr.ContentEnd)
+	iloc, err := core.ParseIloc(in.span, s.IlocHdr.ContentStart, s.IlocHdr.ContentEnd)
 	if err != nil {
 		return errFallback
 	}
@@ -418,7 +419,7 @@ type streamEnv struct {
 	patches []patch
 }
 
-func (e *streamEnv) base() int { return e.in.metaStart }
+func (e *streamEnv) Base() int { return e.in.metaStart }
 
 // file returns the segments of the file buf belongs to: the input's bytes
 // around it (with output patches applied when output is true), and buf in
@@ -452,17 +453,17 @@ func (e *streamEnv) patchesIn(lo, hi int, output bool) []patch {
 	return ps
 }
 
-func (e *streamEnv) inputCRC(in []byte) (uint32, error) {
+func (e *streamEnv) InputCRC(in []byte) (uint32, error) {
 	v := newView(e.in.r, e.file(in, false))
 	return v.crcExcluding(v.size, v.size)
 }
 
-func (e *streamEnv) inputCRCExcluding(in []byte, a, b int) (uint32, error) {
-	return newView(e.in.r, e.file(in, false)).crcExcluding(int64(e.base()+a), int64(e.base()+b))
+func (e *streamEnv) InputCRCExcluding(in []byte, a, b int) (uint32, error) {
+	return newView(e.in.r, e.file(in, false)).crcExcluding(int64(e.Base()+a), int64(e.Base()+b))
 }
 
-func (e *streamEnv) outputCRCExcluding(out []byte, a, b int) (uint32, error) {
-	return newView(e.in.r, e.file(out, true)).crcExcluding(int64(e.base()+a), int64(e.base()+b))
+func (e *streamEnv) OutputCRCExcluding(out []byte, a, b int) (uint32, error) {
+	return newView(e.in.r, e.file(out, true)).crcExcluding(int64(e.Base()+a), int64(e.Base()+b))
 }
 
 // toInput maps a file offset in the file buf belongs to (the input, or an
@@ -492,34 +493,34 @@ func (e *streamEnv) rangeToInput(buf []byte, off, n int) (lo, hi int, ok bool) {
 	return lo, last + 1, true
 }
 
-func (e *streamEnv) exifField(buf []byte, metaBodyStart, metaCEnd int) (ExifOrientationField, bool, error) {
-	loc, ok, err := FindExifItemLocation(buf, metaBodyStart, metaCEnd)
+func (e *streamEnv) ExifField(buf []byte, metaBodyStart, metaCEnd int) (core.ExifOrientationField, bool, error) {
+	loc, ok, err := core.FindExifItemLocation(buf, metaBodyStart, metaCEnd)
 	if err != nil || !ok {
-		return ExifOrientationField{}, false, err
+		return core.ExifOrientationField{}, false, err
 	}
 	fileSize := e.in.size + len(buf) - len(e.in.span)
 	if loc.AbsStart >= uint64(fileSize) {
-		field, ok := exifFieldInBlob(nil, loc.AbsStart) // pySlice64 past the end: empty
+		field, ok := core.ExifFieldInBlob(nil, loc.AbsStart) // pySlice64 past the end: empty
 		return field, ok, nil
 	}
 	start := int(loc.AbsStart)
 	n := int(min(loc.Length, uint64(fileSize-start)))
 	if n > exifBlobCap {
-		return ExifOrientationField{}, false, errFallback
+		return core.ExifOrientationField{}, false, errFallback
 	}
 	inStart, _, ok := e.rangeToInput(buf, start, n)
 	if !ok {
-		return ExifOrientationField{}, false, errFallback // the blob would touch the span
+		return core.ExifOrientationField{}, false, errFallback // the blob would touch the span
 	}
 	blob := make([]byte, n)
 	if _, err := newView(e.in.r, []segment{{off: int64(inStart), n: int64(n)}}).ReadAt(blob, 0); err != nil {
-		return ExifOrientationField{}, false, err
+		return core.ExifOrientationField{}, false, err
 	}
-	field, ok := exifFieldInBlob(blob, loc.AbsStart)
+	field, ok := core.ExifFieldInBlob(blob, loc.AbsStart)
 	return field, ok, nil
 }
 
-func (e *streamEnv) writeExif(out []byte, field ExifOrientationField, value uint16) error {
+func (e *streamEnv) WriteExif(out []byte, field core.ExifOrientationField, value uint16) error {
 	off, end, ok := e.rangeToInput(out, field.AbsOffset, 2)
 	if !ok || end > e.in.size {
 		return errFallback
@@ -580,13 +581,13 @@ func flushLog(w io.Writer, b *bytes.Buffer) {
 // held in memory; anything unusual falls back to reading all of r into
 // memory and running ApplyRotation. r must stay unchanged and readable
 // while the View is used.
-func ApplyRotationReaderAt(r io.ReaderAt, size int64, deltaTurns int, opts RotateOptions) (*View, error) {
+func ApplyRotationReaderAt(r io.ReaderAt, size int64, deltaTurns int, opts core.RotateOptions) (*View, error) {
 	buf := logBuffer(opts.Log)
 	in, err := loadStreamInput(r, size)
 	if err == nil {
 		env := &streamEnv{in: in}
 		var out []byte
-		out, err = applyRotation(env, in.span, deltaTurns, RotateOptions{NoExifSync: opts.NoExifSync, Log: asWriter(buf)})
+		out, err = core.ApplyRotationEnv(env, in.span, deltaTurns, core.RotateOptions{NoExifSync: opts.NoExifSync, Log: asWriter(buf)})
 		if err == nil {
 			flushLog(opts.Log, buf)
 			return newView(r, env.file(out, true)), nil
@@ -597,7 +598,7 @@ func ApplyRotationReaderAt(r io.ReaderAt, size int64, deltaTurns int, opts Rotat
 	if err != nil {
 		return nil, err
 	}
-	out, err := ApplyRotation(data, deltaTurns, opts)
+	out, err := core.ApplyRotation(data, deltaTurns, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -606,24 +607,24 @@ func ApplyRotationReaderAt(r io.ReaderAt, size int64, deltaTurns int, opts Rotat
 
 // reverseStream runs prepareReversalEnv on the span; a non-nil error other
 // than errNoProvenance means "fall back".
-func reverseStream(r io.ReaderAt, size int64, opts ReverseOptions, log io.Writer) (*reversal, *streamInput, error) {
+func reverseStream(r io.ReaderAt, size int64, opts core.ReverseOptions, log io.Writer) (*core.Reversal, *streamInput, error) {
 	in, err := loadStreamInput(r, size)
 	if err != nil {
 		return nil, nil, err
 	}
-	rev, err := prepareReversalEnv(&streamEnv{in: in}, in.span, opts.IgnoreTamper, logger{log})
+	rev, err := core.PrepareReversalEnv(&streamEnv{in: in}, in.span, opts.IgnoreTamper, log)
 	return rev, in, err
 }
 
 // reversalView is reconstructedPlan as a View over the input.
-func reversalView(r io.ReaderAt, size int, rev *reversal) *View {
+func reversalView(r io.ReaderAt, size int, rev *core.Reversal) *View {
 	var segs []segment
-	for _, c := range reconstructedPlan(rev) {
-		if c.lit != nil {
-			segs = append(segs, segment{lit: c.lit})
+	for _, c := range core.ReconstructedPlan(rev) {
+		if c.Lit != nil {
+			segs = append(segs, segment{lit: c.Lit})
 			continue
 		}
-		lo, hi := max(0, min(c.lo, size)), max(0, min(c.hi, size))
+		lo, hi := max(0, min(c.Lo, size)), max(0, min(c.Hi, size))
 		hi = max(lo, hi)
 		segs = append(segs, segment{off: int64(lo), n: int64(hi - lo)})
 	}
@@ -632,20 +633,20 @@ func reversalView(r io.ReaderAt, size int, rev *reversal) *View {
 
 // ReverseRotationReaderAt is ReverseRotation over an io.ReaderAt, with the
 // same result as a View (see ApplyRotationReaderAt).
-func ReverseRotationReaderAt(r io.ReaderAt, size int64, opts ReverseOptions) (*View, error) {
+func ReverseRotationReaderAt(r io.ReaderAt, size int64, opts core.ReverseOptions) (*View, error) {
 	buf := logBuffer(opts.Log)
 	rev, in, err := reverseStream(r, size, opts, asWriter(buf))
 	if err == nil {
 		v := reversalView(r, in.size, rev)
 		var crc uint32
 		if crc, err = v.crcExcluding(v.size, v.size); err == nil {
-			if err = checkReconstructedCrc(rev, crc, logger{asWriter(buf)}); err == nil {
+			if err = core.CheckReconstructedCrc(rev, crc, asWriter(buf)); err == nil {
 				flushLog(opts.Log, buf)
 				return v, nil
 			}
 		}
 	}
-	if errors.Is(err, errNoProvenance) { // exact without the []byte engine
+	if errors.Is(err, core.ErrNoProvenance) { // exact without the []byte engine
 		flushLog(opts.Log, buf)
 		return nil, err
 	}
@@ -654,7 +655,7 @@ func ReverseRotationReaderAt(r io.ReaderAt, size int64, opts ReverseOptions) (*V
 	if err != nil {
 		return nil, err
 	}
-	out, err := ReverseRotation(data, opts)
+	out, err := core.ReverseRotation(data, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -662,20 +663,20 @@ func ReverseRotationReaderAt(r io.ReaderAt, size int64, opts ReverseOptions) (*V
 }
 
 // VerifyReversibleReaderAt is VerifyReversible over an io.ReaderAt.
-func VerifyReversibleReaderAt(r io.ReaderAt, size int64, opts ReverseOptions) error {
+func VerifyReversibleReaderAt(r io.ReaderAt, size int64, opts core.ReverseOptions) error {
 	buf := logBuffer(opts.Log)
 	rev, in, err := reverseStream(r, size, opts, asWriter(buf))
 	if err == nil {
 		v := reversalView(r, in.size, rev)
 		var crc uint32
 		if crc, err = v.crcExcluding(v.size, v.size); err == nil {
-			if err = checkReconstructedCrc(rev, crc, logger{asWriter(buf)}); err == nil {
+			if err = core.CheckReconstructedCrc(rev, crc, asWriter(buf)); err == nil {
 				flushLog(opts.Log, buf)
 				return nil
 			}
 		}
 	}
-	if errors.Is(err, errNoProvenance) {
+	if errors.Is(err, core.ErrNoProvenance) {
 		flushLog(opts.Log, buf)
 		return err
 	}
@@ -684,26 +685,26 @@ func VerifyReversibleReaderAt(r io.ReaderAt, size int64, opts ReverseOptions) er
 	if err != nil {
 		return err
 	}
-	return VerifyReversible(data, opts)
+	return core.VerifyReversible(data, opts)
 }
 
 // GatherInfoReaderAt is GatherInfo over an io.ReaderAt; for well-formed
 // files it reads only the 'meta' and provenance boxes.
-func GatherInfoReaderAt(r io.ReaderAt, size int64) (*Info, error) {
+func GatherInfoReaderAt(r io.ReaderAt, size int64) (*core.Info, error) {
 	in, err := loadStreamInput(r, size)
 	if err == nil {
 		err = errFallback
 		// GatherInfo's lenient provenance parse reads entries without a
 		// consumed-length error; stream only if the record is well-formed.
-		s, lerr := LocateStructures(in.span)
+		s, lerr := core.LocateStructures(in.span)
 		wellFormed := lerr == nil
 		if wellFormed && s.ProvenanceHdr != nil {
-			_, _, wellFormed, lerr = ParseProvenanceLenient(in.span, *s.ProvenanceHdr)
+			_, _, wellFormed, lerr = core.ParseProvenanceLenient(in.span, *s.ProvenanceHdr)
 			wellFormed = wellFormed && lerr == nil
 		}
 		if wellFormed {
-			var info *Info
-			if info, err = GatherInfo(in.span); err == nil {
+			var info *core.Info
+			if info, err = core.GatherInfo(in.span); err == nil {
 				return info, nil
 			}
 		}
@@ -713,7 +714,7 @@ func GatherInfoReaderAt(r io.ReaderAt, size int64) (*Info, error) {
 	if err != nil {
 		return nil, err
 	}
-	return GatherInfo(data)
+	return core.GatherInfo(data)
 }
 
 // verifyStructureView is VerifyStructure over a View: the prechecks include
@@ -730,5 +731,5 @@ func verifyStructureView(v *View) error {
 	if err != nil {
 		return err
 	}
-	return VerifyStructure(data)
+	return core.VerifyStructure(data)
 }
