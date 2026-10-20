@@ -7,14 +7,14 @@ by Oleg Ostrozhansky (MIT). The Go port mirrors one pinned upstream release.
 
 | | |
 |---|---|
-| Upstream version | **1.7.1** (`heicrotate.Version`) |
+| Upstream version | **1.7.1** (`version.Version`) |
 | Upstream commit | see [`difftest/upstream.commit`](../difftest/upstream.commit), currently `70d6c73b5827aabf958c0649b3ac1c9e0dd33d05` (2026-10-08) |
-| Go port version | `heicrotate.GoVersion`, currently `1.7.1+go.1` |
+| Go port version | `version.GoVersion`, currently `1.7.1+go.1` |
 
 `difftest/upstream.commit` is the **single source of truth** for the pin.
 The Makefile (`make upstream`), CI, and the differential harness all read
 it. The harness refuses to run against a checkout at any other commit,
-or whose `_version.py` doesn't match `heicrotate.Version`. Set
+or whose `_version.py` doesn't match `version.Version`. Set
 `HEIC_ROTATE_PY_ALLOW_UNPINNED=1` to override this for local experiments.
 
 ## Bumping the Pin (porting a new upstream release)
@@ -23,14 +23,14 @@ or whose `_version.py` doesn't match `heicrotate.Version`. Set
    and new commits.
 2. Write the new commit SHA to `difftest/upstream.commit` and run `make upstream`.
 3. Port the changes function by function, keeping the map below current.
-   Changes to `apply_rotation`/`_prepare_reversal` go into the shared orchestration in `core.go`.
-   If a change reads bytes outside the meta+provenance span in a new way, route it through `fileEnv`
-   and implement it in both `memEnv` and `stream.go`'s `streamEnv`. If it reads new boxes at fixed
-   offsets, extend `fixedReadsFit`. `stream_test.go`'s cross-check catches what's missed.
+   Changes to `apply_rotation`/`_prepare_reversal` go into the shared orchestration in `pkg/core/core.go`.
+   If a change reads bytes outside the meta+provenance span in a new way, route it through `FileEnv`
+   and implement it in both `memEnv` and `pkg/stream`'s `streamEnv`. If it reads new boxes at fixed
+   offsets, extend `fixedReadsFit`. `pkg/stream/stream_test.go`'s cross-check catches what's missed.
    If `cli.py`'s docstring changed, regenerate the help text:
-   `python3 -I tools/gen_docstring.py .upstream/src/heic_rotate/cli.py > cli/docstring.go`.
-   If its parser changed, re-capture `cli/testdata/argparse_py314.json` from the real parser.
-4. Set `Version` in `version.go` to the new upstream version and reset
+   `python3 -I tools/gen_docstring.py .upstream/src/heic_rotate/cli.py > internal/cli/docstring.go`.
+   If its parser changed, re-capture `internal/cli/testdata/argparse_py314.json` from the real parser.
+4. Set `Version` in `pkg/version/version.go` to the new upstream version and reset
    `GoRevision` to 1.
 5. `make test difftest` must be green. Any new divergence goes in
    [COMPAT.md](COMPAT.md).
@@ -49,7 +49,9 @@ For a Go-only fix release, bump `GoRevision` and nothing else (see
 
 Naming rules are in [DESIGN.md § Naming Rules](DESIGN.md#naming-rules-python--go).
 
-### Function map: `core.py` → `core.go`
+### Function map: `core.py` → `pkg/core/core.go`
+
+Names below are in package `core` unless marked.
 
 | Python | Go |
 |---|---|
@@ -80,9 +82,9 @@ Naming rules are in [DESIGN.md § Naming Rules](DESIGN.md#naming-rules-python--g
 | `get_current_rotation` / `get_rotation_from_iprp_snapshot` | `GetCurrentRotation` / `GetRotationFromIprpSnapshot` |
 | `apply_rotation(data, delta_turns, sync_exif=True, verbose=True)` | `ApplyRotation(data []byte, deltaTurns int, opts RotateOptions) ([]byte, error)`; `RotateOptions{NoExifSync bool; Log io.Writer}` |
 | `_restore_meta_provenance_span` | `restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logger) ([]byte, error)` |
-| `_prepare_reversal` | `prepareReversal(data []byte, ignoreTamper bool, log logger) (*reversal, error)` |
-| (Go-only) | `fileEnv` / `memEnv` (core.go), `streamEnv`, `View`, `ApplyRotationReaderAt`, `ReverseRotationReaderAt`, `VerifyReversibleReaderAt`, `GatherInfoReaderAt` (stream.go): the streaming engine over the same orchestration |
-| `_iter_reconstructed_chunks` | `iterReconstructedChunks(data []byte, r *reversal) iter.Seq[[]byte]` (sub-slices of `data`, no copies), called through the package variable `reconstructedChunks` (the test seam upstream monkeypatches) |
+| `_prepare_reversal` | `prepareReversal(data []byte, ignoreTamper bool, log logger) (*Reversal, error)`, a wrapper over the Go-only `PrepareReversalEnv(env FileEnv, data, ignoreTamper, log io.Writer)` |
+| (Go-only) | `FileEnv` / `memEnv`, `ApplyRotationEnv`, `Reversal`, `Chunk`, `ReconstructedPlan`, `CheckReconstructedCrc`, `ErrNoProvenance`, `ExifFieldInBlob`, `ListBoxes` (`pkg/core`): the hooks the streaming engine uses. `streamEnv`, `View`, `ViewOfBytes`, `ApplyRotationReaderAt`, `ReverseRotationReaderAt`, `VerifyReversibleReaderAt`, `GatherInfoReaderAt`, `VerifyStructureView` (`pkg/stream`): the streaming engine over the same orchestration |
+| `_iter_reconstructed_chunks` | `iterReconstructedChunks(data []byte, r *Reversal) iter.Seq[[]byte]` (sub-slices of `data`, no copies), called through the package variable `reconstructedChunks` (the test seam upstream monkeypatches) |
 | `reverse_rotation(data, ignore_tamper=False, verbose=True)` | `ReverseRotation(data, opts ReverseOptions) ([]byte, error)`; `ReverseOptions{IgnoreTamper bool; Log io.Writer}` |
 | `verify_reversible` | `VerifyReversible(data, opts ReverseOptions) error` |
 | `gather_info` | `GatherInfo(data) (*Info, error)` |
@@ -90,9 +92,10 @@ Naming rules are in [DESIGN.md § Naming Rules](DESIGN.md#naming-rules-python--g
 | `verify_structure` | `VerifyStructure(data) error` |
 | `ERROR_EXIT_CODE` | `const ErrorExitCode = 10` |
 | `_version_string()` | `VersionString() string` (exported so callers can print it) |
-| — (Go-only) | `GoRevision`, `GoVersion`, `GoVersionString()` (see Key Decisions) |
+| `_version.py` `VERSION` | `version.Version` (`pkg/version`) |
+| — (Go-only) | `version.GoRevision`, `version.GoVersion`, `version.GoVersionString()` (see Key Decisions) |
 
-### Function map: `cli.py` → `cli/cli.go`
+### Function map: `cli.py` → `internal/cli/cli.go`
 
 | Python | Go |
 |---|---|
@@ -100,6 +103,6 @@ Naming rules are in [DESIGN.md § Naming Rules](DESIGN.md#naming-rules-python--g
 | `_BARE_ROTATION_VALUES` | `bareRotationValues` |
 | `_insert_implicit_rotate(argv)` | `insertImplicitRotate(argv []string) []string` (same algorithm) |
 | `main()` | `Main(argv []string, stdout, stderr io.Writer) int` (`argv[0]` is the program name; returns the exit code instead of calling `sys.exit`, so it's testable in-process) |
-| `_run(args, data)` | `run(a *args, stdout io.Writer) (int, error)` maps flags onto the file API. `_run`'s rotate and reverse halves are `RotateFile`/`ReverseFile` (`file.go`). Its info half is `InfoFile` + `FormatInfo`. The self-check goes through `verifyReversibleHook` (the seam upstream patches as `cli.verify_reversible`). Default naming is `DefaultRotateOutput`/`DefaultReverseOutput`. |
-| module docstring (the `-h` description) | `cli/docstring.go`, generated by `tools/gen_docstring.py` |
+| `_run(args, data)` | `run(a *args, stdout io.Writer) (int, error)` maps flags onto the file API. `_run`'s rotate and reverse halves are `files.RotateFile`/`files.ReverseFile` (`pkg/files`). Its info half is `files.InfoFile` + `core.FormatInfo`. The self-check goes through `verifyReversibleHook` in `pkg/files` (the seam upstream patches as `cli.verify_reversible`). Default naming is `files.DefaultRotateOutput`/`files.DefaultReverseOutput`. |
+| module docstring (the `-h` description) | `internal/cli/docstring.go`, generated by `tools/gen_docstring.py` |
 

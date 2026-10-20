@@ -9,35 +9,37 @@ deliberate divergences (D1–D5).
 ```
                 ┌───────────────────────────────────────────────┐
  cmd/heic-rotate│                                               │
- cmd/heic-      │  cli  (← cli.py)                              │
+ cmd/heic-      │  internal/cli  (← cli.py)                     │
  lossless-rotate│   argparse-compatible parser, _run, messages  │
      main.go ──►│   Main(args, stdout, stderr) int              │
                 └──────────────┬────────────────────────────────┘
                                │ uses
                 ┌──────────────▼────────────────────────────────┐
-                │  heicrotate  (module root package)            │
-                │                                               │
-                │  file.go    RotateFile / ReverseFile / InfoFile│  Go-only
-                │     │  (naming, overwrite check, atomic write)│
+                │  pkg/files   RotateFile / ReverseFile /       │  Go-only
+                │     │        InfoFile (naming, overwrite      │
+                │     │        check, atomic write)             │
                 │     ▼                                         │
-                │  stream.go  ReaderAt engine  ─┐               │  Go-only
-                │                               │ shares        │
-                │  core.go    (← core.py, 1:1)  ◄┘ parsers,     │
-                │     []byte in → []byte out      builders, TLV │
-                │  pybytes.go Python slice/index semantics      │
-                │  version.go (← _version.py)                   │
+                │  pkg/stream  ReaderAt engine  ─┐              │  Go-only
+                │                                │ shares       │
+                │  pkg/core    (← core.py, 1:1) ◄┘ orchestration│
+                │     []byte in → []byte out       parsers, TLV │
+                │  pkg/version (← _version.py)                  │
+                │  internal/pybytes  Python slice/index semantics│
                 └───────────────────────────────────────────────┘
 ```
 
-- **`core.go` is the reference implementation.** It's a line-by-line port of
-  `core.py` working on `[]byte`, kept in the same order with the same
+- **`pkg/core` is the reference implementation.** `core.go` is a line-by-line
+  port of `core.py` working on `[]byte`, kept in the same order with the same
   function names and comments, so the two files can be diffed by eye.
-- **`stream.go` is a second engine** over `io.ReaderAt`. It reuses
-  core's parsers and builders on an in-memory copy of the `meta`+provenance
-  span and streams everything else. It must be byte-identical to `core.go`,
-  which a dedicated cross-check test enforces (the same way upstream
-  cross-checks `verify_reversible` against `reverse_rotation`).
-- **`file.go`** is the convenience layer that the CLI calls.
+- **`pkg/stream` is a second engine** over `io.ReaderAt`. It runs core's
+  orchestration on an in-memory copy of the `meta`+provenance span, through
+  the Go-only `core.FileEnv` hooks, and streams everything else. It must be
+  byte-identical to the `[]byte` engine, which a dedicated cross-check test
+  enforces (the same way upstream cross-checks `verify_reversible` against
+  `reverse_rotation`).
+- **`pkg/files`** is the convenience layer that the CLI calls.
+- Each package depends only on the ones below it in the diagram:
+  `files` → `stream` → `core` → `version`, `internal/pybytes`, `internal/pyfmt`.
 
 ## Technology Choices
 
@@ -46,7 +48,7 @@ deliberate divergences (D1–D5).
 | Language | Go, `go 1.23` minimum in `go.mod` | Range-over-func iterators (`iter.Seq2`) give a faithful port of Python's lazy `iter_boxes` generator. 1.23 is old enough for library consumers. Developed on 1.26. |
 | Dependencies | **stdlib only** (library *and* CLI) | Matches upstream. Importers get no transitive deps. |
 | CRC32 | `hash/crc32` IEEE | Same polynomial and init as `zlib.crc32`, which is required for C1. |
-| CLI parsing | Hand-written argparse-compatible parser (`cli/args.go`) | `flag` can't do flags after positionals, flags on both sides of the subcommand, or argparse prefix abbreviations. |
+| CLI parsing | Hand-written argparse-compatible parser (`internal/cli/args.go`) | `flag` can't do flags after positionals, flags on both sides of the subcommand, or argparse prefix abbreviations. |
 | Release | goreleaser | Two builds (`heic-rotate`, `heic-lossless-rotate`), darwin/linux/windows × amd64/arm64, checksums, GitHub release. |
 | Module path | `github.com/pjg/go-heic-lossless-rotate` | `go install …@latest` works for anyone. |
 | Hosting | **Primary:** `arena.the42.net/pjg/go-heic-lossless-rotate` (origin). **Mirror:** GitHub, via push mirror of all branches **and tags** | All development and pushes go to arena. The Go module proxy, `go install` users, and goreleaser all read from GitHub, so the mirror must never lag a tag. |
@@ -56,19 +58,22 @@ deliberate divergences (D1–D5).
 
 ```
 go.mod                          module github.com/pjg/go-heic-lossless-rotate
-doc.go                          ← heic_rotate/__init__.py + module docstrings
-version.go                      ← _version.py   Version = "1.7.1", GoRevision, GoVersion
-core.go                         ← core.py       (1:1 port)
-pybytes.go                      Python slice/index/struct semantics (unexported)
+pkg/core/doc.go                 ← heic_rotate/__init__.py + module docstrings
+pkg/core/core.go                ← core.py       (1:1 port)
+pkg/core/pyerrors.go            IndexError/struct.error as *BoxParseError (COMPAT D2)
+pkg/core/*_test.go              ← tests/test_heic_rotate.py (ported; package core_test)
+pkg/version/version.go          ← _version.py   Version = "1.7.1", GoRevision, GoVersion
+pkg/stream/stream.go            streaming engine (Go-only)
+pkg/files/file.go               file-level API (Go-only)
+internal/cli/cli.go             ← cli.py        Main, buildParser, insertImplicitRotate, run
+internal/cli/args.go            argparse-compatible parser (Go-only)
+internal/pybytes/               Python slice/index/struct semantics
 internal/pyfmt/                 Python repr/format helpers (shared with synth and the CLI)
-stream.go                       streaming engine (Go-only)
-file.go                         file-level API (Go-only)
-cli/cli.go                      ← cli.py        Main, buildParser, insertImplicitRotate, run
-cli/args.go                     argparse-compatible parser (Go-only)
+internal/synth/synth.go         ← tests/synth_heic.py
+internal/craft/                 crafted-structure builder for the corpus tests
+internal/tests/                 test helpers shared across packages
 cmd/heic-rotate/main.go         os.Exit(cli.Main(os.Args, os.Stdout, os.Stderr))
 cmd/heic-lossless-rotate/main.go  (identical)
-internal/synth/synth.go         ← tests/synth_heic.py
-*_test.go                       ← tests/test_heic_rotate.py (ported)
 difftest/                       differential suite vs Python (build tag `difftest`)
 testdata/                       real .heic files (contents gitignored, like upstream)
 docs/COMPAT.md                  every divergence from Python, with examples
@@ -76,8 +81,20 @@ docs/UPSTREAM.md                pinned commit, porting log, Python↔Go function
 .goreleaser.yaml
 ```
 
-Package name: `heicrotate`. Import as
-`heicrotate "github.com/pjg/go-heic-lossless-rotate"`.
+The library is four importable packages under `pkg/`; the module root holds no package:
+
+| Package | Import path | Contents |
+|---|---|---|
+| `core` | `github.com/pjg/go-heic-lossless-rotate/pkg/core` | The 1:1 `core.py` port over `[]byte`: `ApplyRotation`, `ReverseRotation`, `GatherInfo`, the parsers and builders, the error types |
+| `stream` | `…/pkg/stream` | `ApplyRotationReaderAt` and friends, returning a `View` |
+| `files` | `…/pkg/files` | `RotateFile`, `ReverseFile`, `InfoFile`, default output naming, atomic writes |
+| `version` | `…/pkg/version` | `Version`, `GoRevision`, `GoVersion`, `GoVersionString` |
+
+Tests sit next to the code they test. Helpers that more than one package's
+tests use (`MustSynth`, `MustApply`, the upstream-ported `StripProvenanceTag`
+and `MakeV1StyleRecord`, …) live in `internal/tests`. Core's tests are an
+external test package (`core_test`) so they can import those helpers;
+`pkg/core/export_test.go` exposes the few unexported names they need.
 
 ## Naming Rules (Python → Go)
 
@@ -149,7 +166,7 @@ offsets uses `int64`/`uint64` with explicit overflow and underflow checks that
 return `BoxParseError` (D4, D5). Every slice access is bounds-checked
 up front so that truncated input produces an error instead of a panic (D2).
 
-### Python byte-access semantics (`pybytes.go`)
+### Python byte-access semantics (`internal/pybytes`)
 
 `core.py` relies on three different behaviors when an access runs past the
 end of the data. They decide what "byte-identical on every input Python
@@ -157,10 +174,10 @@ accepts" means in practice:
 
 | Python | Past the end of `data` | Go helper |
 |---|---|---|
-| `data[a:b]`, `memoryview[a:b]` | clamps; `a > b` gives empty | `pySlice` (aliases), `pySliceCopy`, `pySlice64` |
-| `int.from_bytes(data[p:p+n])` | silently reads a *shorter* value | `intFromBytes` (reports >64-bit values) |
-| `data[i]`, `struct.unpack_from` | `IndexError` / `struct.error` | `pyIndex`, `unpackU16/32/64` return `*BoxParseError` (D2) |
-| `buf[a:b] = new` | replaces the clamped range, the length may change | `splice` (in place when capacity allows) |
+| `data[a:b]`, `memoryview[a:b]` | clamps; `a > b` gives empty | `pybytes.Slice` (aliases), `SliceCopy`, `Slice64` |
+| `int.from_bytes(data[p:p+n])` | silently reads a *shorter* value | `pybytes.IntFromBytes` (reports >64-bit values) |
+| `data[i]`, `struct.unpack_from` | `IndexError` / `struct.error` | `pybytes.Index`, `UnpackU16/32/64` report `ok=false`; core's `pyIndex`, `unpackU16/32/64` (`pyerrors.go`) turn that into `*BoxParseError` (D2) |
+| `buf[a:b] = new` | replaces the clamped range, the length may change | `pybytes.Splice` (in place when capacity allows) |
 
 Parsers read across box boundaries exactly as Python does (bounds are
 `len(data)`, never the box end). Go-only refusals (D5, D7) are deferred
@@ -193,7 +210,7 @@ differences that make a helper mandatory:
   `-G` (below) is how you find out which Go build you're running.
 
 ### Go port version and release tags
-- **Choice:** `version.go` holds both versions:
+- **Choice:** `pkg/version` holds both versions:
   ```go
   const Version = "1.7.1"                  // ← _version.py; TVER, -V, info
   const GoRevision = 1                     // bump for each Go-only release
@@ -205,8 +222,8 @@ differences that make a helper mandatory:
   implements upstream heic-lossless-rotate 1.7.1
   built with go1.26.5
   ```
-  The third line comes from `runtime.Version()`. The function is `GoVersionString()`,
-  exported next to `VersionString()`.
+  The third line comes from `runtime.Version()`. The function is `version.GoVersionString()`;
+  `-V`'s text stays `core.VersionString()`, next to the rest of the core port.
 - **Tags:**
   - The first Go release for an upstream version (`+go.1`) is tagged plain **`vX.Y.Z`**.
   - Later Go-only fixes are tagged **`vX.Y.Z+go.N`** (N ≥ 2).
@@ -227,13 +244,17 @@ differences that make a helper mandatory:
 
 ### One orchestration, two engines (streaming)
 - **Choice:** `core.go` keeps `core.py`'s functions and order. `ApplyRotation` and `prepareReversal`
-  reach anything outside the buffer they edit through a small unexported `fileEnv` with six
+  reach anything outside the buffer they edit through a small `core.FileEnv` interface with six
   operations: the Exif lookup on input and output, the Exif write, PCRC, CCRC on input and output, and the
   base file offset. `memEnv` (the `[]byte` engine) has the whole file in the buffer. `streamEnv`
-  (`stream.go`) edits only the meta+provenance span and reads the rest through an `io.ReaderAt`.
+  (`pkg/stream`) edits only the meta+provenance span and reads the rest through an `io.ReaderAt`.
   Both engines run the same orchestration, so they can't drift. Reverse shares
-  `reconstructedPlan`, the chunk sequence that `iterReconstructedChunks` walks and the streaming engine turns into a
+  `ReconstructedPlan`, the chunk sequence that `iterReconstructedChunks` walks and the streaming engine turns into a
   `View`.
+- **Go-only hooks:** because the engines are separate packages, the pieces `pkg/stream` calls are exported
+  from `pkg/core` and documented as Go-only: `FileEnv`, `ApplyRotationEnv`, `PrepareReversalEnv`,
+  `Reversal` (opaque), `Chunk`, `ReconstructedPlan`, `CheckReconstructedCrc`, `ErrNoProvenance`,
+  `ExifFieldInBlob`, and `ListBoxes`. They aren't part of upstream's API, and callers shouldn't need them.
 - **Why the span is enough:** every edit falls inside `[meta_start, prov_end)` plus at most one 2-byte
   Exif patch, an argument upstream's `reverse_rotation` docstring makes itself.
 - **Exactness by prechecks plus fallback:** the core's parsers, like upstream's, read past box ends.
@@ -252,10 +273,10 @@ differences that make a helper mandatory:
   and reverse about 0.45 MB, against about 2× the file before. Malformed or unusual files (64-bit or to-EOF `meta`, over-64-bit
   iloc values, corruption) fall back and cost what they always did.
 - **Trade-offs:** a rotate makes about 4–5 sequential passes over the input (PCRC, CCRC, the self-check's two CRCs,
-  the write), which the page cache absorbs. `stream_test.go` cross-checks both engines over 17,569 inputs,
+  the write), which the page cache absorbs. `pkg/stream/stream_test.go` cross-checks both engines over 17,569 inputs,
   including a corruption sweep, and requires every successful operation on a well-formed file to stream.
 
-### File API (`file.go`)
+### File API (`pkg/files`)
 - **Choice:** `RotateFile`/`ReverseFile` are the rotate and reverse halves of `cli.py`'s `_run`. They
   open the input as an `*os.File` and run the streaming engine. A non-regular input is read into memory. Then come
   the structure check and (for rotate) the post-rotate self-check through `verifyReversibleHook`, both on the `View`,
@@ -287,9 +308,9 @@ differences that make a helper mandatory:
 
 ### argparse-compatible CLI parser
 - **Target:** Python 3.14's argparse (COMPAT PYARGS). Behavior captured from the
-  real parser lives in `cli/testdata/argparse_py314.json` (184 argv cases).
+  real parser lives in `internal/cli/testdata/argparse_py314.json` (184 argv cases).
 - **Processing order** decides the exit code when an argv has several problems,
-  so it's reproduced too. `cli/args.go` mirrors `_parse_optional`,
+  so it's reproduced too. `internal/cli/args.go` mirrors `_parse_optional`,
   `_get_option_tuples`, and `consume_optional`:
   - arguments are processed left to right
   - a positional is converted when it's consumed (`rotate 45 x -h` exits 2)
@@ -302,7 +323,7 @@ differences that make a helper mandatory:
   - only the first `--` is consumed; later ones are values
   - negative-number-like arguments, arguments containing spaces, `-`, and `''`
     are positionals
-- **Choice:** A small declarative parser in `cli/args.go` that reproduces:
+- **Choice:** A small declarative parser in `internal/cli/args.go` that reproduces:
   - top-level `-q/--quiet`, `--dry-run`, `-f/--force` accepted before **or**
     after the subcommand (Python's `default=SUPPRESS` layering)
   - interspersed flags and positionals, `--` terminator, and combined short
@@ -321,7 +342,7 @@ differences that make a helper mandatory:
     It joins the long-option abbreviation set, so `--gov` works and `--go` is
     unambiguous because no other long option starts with `go`.
 - **Help text** (C6, may differ) uses argparse's layout. The top-level description is
-  upstream's module docstring, generated into `cli/docstring.go` by
+  upstream's module docstring, generated into `internal/cli/docstring.go` by
   `tools/gen_docstring.py`.
 - **Trade-offs:** About 450 lines of custom code. It's covered by the captured table, the
   ported CLI tests, and the CLI difftest (2,000 generated argv sequences against the

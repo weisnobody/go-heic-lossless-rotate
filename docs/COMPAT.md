@@ -23,7 +23,7 @@ page.
 | **Python** | `rotate`/`reverse` derive the default output path from `input.rsplit('.', 1)[0]` over the **whole path**, so a dot in a directory name, or a leading dot in the file name, counts as the extension. |
 | **Go** | The extension is stripped from the **base name only**, and a base name that *starts* with its only dot (a dot-file) has no extension. `.heic` is always appended, and the `_restored`-suffix stripping in `rotate` works as in Python. |
 | **Same for** | Every ordinary `dir/name.ext` input, which covers almost all real use. |
-| **Implemented in** | `DefaultRotateOutput`/`DefaultReverseOutput` in `file.go` (used by the CLI) |
+| **Implemented in** | `DefaultRotateOutput`/`DefaultReverseOutput` in `pkg/files` (used by the CLI) |
 
 | Input | Python `rotate` default | Go `rotate` default |
 |---|---|---|
@@ -57,7 +57,7 @@ about 2.3% of cases are D2.
 | **Go** | Writes a temp file in the output's directory, fsyncs it, and renames it over the target, so the output is either the old file or the complete new one. Everything else matches Python's in-place write: writes go **through symlinks** (a dangling link's target is created; the link is never replaced); a **directory** or **unwritable** output fails with Python's errno and message; **new files** get `0666` minus the umask; an **overwritten file keeps its mode** and, best effort, its owner; a **hard-linked** output is written in place (non-atomically, exactly like Python) so its other links see the change; error messages name the output path. |
 | **Visible differences** | Overwriting a file that isn't hard-linked replaces its inode: xattrs/ACLs on the old file aren't carried over, and the owner is restored only when permitted (as root) - otherwise the file is owned by you. A stray `.heic-rotate-*` temp file can be left only if the process is killed between creating and renaming it. |
 | **Same for** | Output bytes, messages, exit codes, the `-f` refusal, in-place editing (input == output), file modes, symlinks, and hard links - checked by the CLI difftest, which compares the filesystem state both tools leave behind. |
-| **Implemented in** | Phase 4 (`writeOutput` in `file.go`) |
+| **Implemented in** | Phase 4 (`writeOutput` in `pkg/files/file.go`) |
 
 ## D4: Negative `iloc` offset after patching
 

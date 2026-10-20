@@ -36,28 +36,40 @@ Implements upstream **v1.7.1** (see [docs/UPSTREAM.md](docs/UPSTREAM.md)).
 ## Library
 
 ```go
-import heicrotate "github.com/pjg/go-heic-lossless-rotate"
+import (
+	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/files"
+	"github.com/pjg/go-heic-lossless-rotate/pkg/stream"
+)
 
 // Files: everything the CLI does (self-check, default naming, overwrite
 // refusal, atomic write), with the CLI's messages if you pass a Log writer.
-res, err := heicrotate.RotateFile("photo.heic", "", 1, heicrotate.FileOptions{}) // 1 quarter turn CCW
-info, err := heicrotate.InfoFile(res.Output)       // *info.DeltaQuarterTurns == 1
-_, err = heicrotate.ReverseFile(res.Output, "", heicrotate.FileOptions{})
+res, err := files.RotateFile("photo.heic", "", 1, files.FileOptions{}) // 1 quarter turn CCW
+info, err := files.InfoFile(res.Output)       // *info.DeltaQuarterTurns == 1
+_, err = files.ReverseFile(res.Output, "", files.FileOptions{})
 
 // Streams: any io.ReaderAt, result as a View (io.ReaderAt + io.WriterTo).
-view, err := heicrotate.ApplyRotationReaderAt(f, size, 1, heicrotate.RotateOptions{})
+view, err := stream.ApplyRotationReaderAt(f, size, 1, core.RotateOptions{})
 _, err = view.WriteTo(w)
 
 // Bytes: the 1:1 port of upstream's core.py.
-rotated, err := heicrotate.ApplyRotation(data, 3, heicrotate.RotateOptions{}) // 270 CCW = 90 CW
-original, err := heicrotate.ReverseRotation(rotated, heicrotate.ReverseOptions{})
+rotated, err := core.ApplyRotation(data, 3, core.RotateOptions{}) // 270 CCW = 90 CW
+original, err := core.ReverseRotation(rotated, core.ReverseOptions{})
 ```
 
-Errors are `*heicrotate.BoxParseError` (malformed or unsupported structure),
-`*heicrotate.ProvenanceError` (missing or inconsistent provenance record, or a
-failed self-check), `*heicrotate.OutputExistsError`, or file-system errors.
-The library never panics on malformed input. See `example_test.go` for runnable
-examples.
+| Package | Use it for |
+|---|---|
+| [`pkg/files`](pkg/files) | Rotating, reversing, and inspecting files on disk, exactly as the CLI does |
+| [`pkg/stream`](pkg/stream) | Any `io.ReaderAt`, holding only the metadata in memory |
+| [`pkg/core`](pkg/core) | `[]byte` in, `[]byte` out: the 1:1 port of upstream's `core.py` |
+| [`pkg/version`](pkg/version) | The upstream version implemented and the Go port's own version |
+
+Errors are `*core.BoxParseError` (malformed or unsupported structure),
+`*core.ProvenanceError` (missing or inconsistent provenance record, or a
+failed self-check), `*files.OutputExistsError`, or file-system errors.
+The library never panics on malformed input. See the `Example` functions in
+[`pkg/files`](pkg/files/example_test.go) and [`pkg/core`](pkg/core/example_test.go)
+for runnable examples.
 
 ## Development
 

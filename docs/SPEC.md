@@ -22,7 +22,7 @@ This project is a Go port that is both:
 
 with functions and code structure that mirror the Python source as
 closely as Go allows. A reader should be able to put `core.py` and
-`core.go` side by side and follow them function by function.
+`pkg/core/core.go` side by side and follow them function by function.
 
 **Upstream baseline:** v1.7.1, commit `70d6c73b5827aabf958c0649b3ac1c9e0dd33d05`
 (2026-10-08).
@@ -37,7 +37,7 @@ Both get first-class treatment. Neither is secondary.
   unchanged. *Trigger:* a sideways phone photo, or a batch script over a
   photo library.
 - **Go developer.** Someone building a Go application that handles HEIC
-  files and wants `heicrotate.ApplyRotation(data, 1, opts)` in-process: no
+  files and wants `core.ApplyRotation(data, 1, opts)` in-process: no
   subprocess, no Python, no cgo, and no third-party dependencies pulled into their
   module graph. *Trigger:* user-facing "rotate" button, ingest-time
   orientation fix-up.
@@ -87,10 +87,10 @@ from the differential corpus.
 
 ### Must Have
 
-1. **Core port** (`heic_rotate/core.py` becomes package `heicrotate`). Every
+1. **Core port** (`heic_rotate/core.py` becomes package `core`, `pkg/core`). Every
    function, constant, and error type is ported 1:1 and works on `[]byte`.
    Public Python names are exported, and `_private` names are unexported.
-2. **CLI port** (`heic_rotate/cli.py` becomes package `cli`): `rotate`,
+2. **CLI port** (`heic_rotate/cli.py` becomes package `cli`, `internal/cli`): `rotate`,
    `reverse`, `info`, `-V`, implicit `rotate`, all flags, the exact
    messages, and the exit codes. Parsed with the stdlib only. Plus the Go-only
    `-G`/`--goversion` (E1).
@@ -161,7 +161,7 @@ from the differential corpus.
 
 ### S3: Library use in an upload pipeline
 - **Given:** a Go service with an uploaded HEIC in `[]byte`
-- **When:** it calls `heicrotate.ApplyRotation(data, 3, heicrotate.Options{})`
+- **When:** it calls `core.ApplyRotation(data, 3, core.RotateOptions{})`
 - **Then:** it gets the rotated bytes or a typed error (`*BoxParseError` /
   `*ProvenanceError`), with nothing written to stdout and no panic.
 
