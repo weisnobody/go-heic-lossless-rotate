@@ -1,23 +1,22 @@
-// Package stream is the streaming engine (Go-only): rotate, reverse, verify,
-// and info over an io.ReaderAt without holding the image data in memory.
-//
-// Every edit falls inside the meta+provenance span [meta_start, prov_end)
-// plus at most one 2-byte Exif patch (upstream's reverse_rotation docstring
-// makes this argument; it holds for apply too). So the engine loads only
-// that span and runs the SAME orchestration as the []byte engine on it -
-// core.ApplyRotationEnv / core.PrepareReversalEnv - through a core.FileEnv that
-// reads everything else (the Exif blob, CRCs) on demand. Results are
-// Views: the input with a few ranges replaced, never copied wholesale.
-//
-// Exactness: the core's parsers, like upstream's, read past box ends.
-// Within the loaded span that reads the same bytes as the whole file
-// would; past its end it wouldn't. The engine therefore runs only on files
-// that pass prechecks under which every read stays inside the span or
-// ends in an error, and it treats ANY error or failed precheck as "not
-// mine": it falls back to reading the whole input and running the []byte
-// engine, which gives the authoritative result. Well-formed files stream;
-// malformed or unusual ones cost what they always did (~2x the file).
 package stream
+
+// How it works: every edit falls inside the meta+provenance span
+// [meta_start, prov_end) plus at most one 2-byte Exif patch (upstream's
+// reverse_rotation docstring makes this argument; it holds for apply too).
+// So the engine loads only that span and runs the SAME orchestration as the
+// []byte engine on it - core.ApplyRotationEnv / core.PrepareReversalEnv -
+// through a core.FileEnv that reads everything else (the Exif blob, CRCs) on
+// demand. Results are Views: the input with a few ranges replaced, never
+// copied wholesale.
+//
+// Exactness: the core's parsers, like upstream's, read past box ends. Within
+// the loaded span that reads the same bytes as the whole file would; past
+// its end it wouldn't. The engine therefore runs only on files that pass
+// prechecks under which every read stays inside the span or ends in an
+// error, and it treats ANY error or failed precheck as "not mine": it falls
+// back to reading the whole input and running the []byte engine, which gives
+// the authoritative result. Well-formed files stream; malformed or unusual
+// ones cost what they always did (~2x the file).
 
 import (
 	"bytes"

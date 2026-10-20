@@ -1,5 +1,15 @@
 // Package version holds the upstream version this port implements and the Go
 // port's own release version.
+//
+// [Version] is upstream's version, written into every file's provenance
+// record and shown by -V, so output stays byte-identical to the Python
+// tool's. [GoVersion] adds semver build metadata for the Go port's own
+// releases ("1.7.1+go.1"); it never reaches a file, and -G prints it.
+//
+// The first Go release for an upstream version is tagged vX.Y.Z; later
+// Go-only fixes are tagged vX.Y.Z+go.N. Go's module tooling ignores tags
+// with build metadata, so `go get ...@latest` resolves to vX.Y.Z, and a
+// Go-only fix must be requested by its tag.
 package version
 
 import (
