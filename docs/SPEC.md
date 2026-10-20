@@ -22,7 +22,7 @@ This project is a Go port that is both:
 
 with functions and code structure that mirror the Python source as
 closely as Go allows. A reader should be able to put `core.py` and
-`core.go` side by side and follow them function by function.
+`pkg/core/core.go` side by side and follow them function by function.
 
 **Upstream baseline:** v1.7.1, commit `70d6c73b5827aabf958c0649b3ac1c9e0dd33d05`
 (2026-10-08).
@@ -37,7 +37,7 @@ Both get first-class treatment. Neither is secondary.
   unchanged. *Trigger:* a sideways phone photo, or a batch script over a
   photo library.
 - **Go developer.** Someone building a Go application that handles HEIC
-  files and wants `heicrotate.ApplyRotation(data, 1, opts)` in-process: no
+  files and wants `core.ApplyRotation(data, 1, opts)` in-process: no
   subprocess, no Python, no cgo, and no third-party dependencies pulled into their
   module graph. *Trigger:* user-facing "rotate" button, ingest-time
   orientation fix-up.
@@ -76,19 +76,21 @@ from the differential corpus.
 | # | Python 1.7.1 behavior | Go behavior |
 |---|---|---|
 | D1 | The default output path uses `input.rsplit('.', 1)[0]` on the **whole path**, so `dir.v2/photo` becomes `dir_rotated.heic` and `.hidden` becomes `_rotated.heic` | The extension is stripped from the **base name only**. A leading dot doesn't count as an extension. For every ordinary `name.ext` input the result is identical to Python's. |
-| D2 | Malformed or truncated boxes crash with a Python traceback (`struct.error`, `IndexError`, `OverflowError`) and exit `1` | Go returns `BoxParseError` or `ProvenanceError`, prints `error: ...`, and exits `10`. **The library never panics on malformed input.** |
+| D2 | Malformed boxes or provenance entries crash with a Python traceback (`struct.error`, `IndexError`, `KeyError`) and exit `1` | Go returns `BoxParseError` or `ProvenanceError`, prints `error: ...`, and exits `10`. **The library never panics on malformed input.** |
 | D3 | The output file is opened with `'wb'` and written in place, so a crash mid-write leaves a truncated file | The CLI writes to a temp file in the same directory, then renames it over the target, keeping the existing target's file mode when `-f` overwrites. |
 | D4 | A shrinking `iloc` patch that would go negative raises an uncaught `OverflowError` | `BoxParseError` |
-| D5 | `iloc` field widths over 8 bytes are handled as arbitrary-precision ints | Refused with `BoxParseError` (the spec only defines 0/4/8) |
+| D5 | `iloc` values are arbitrary-precision ints | Any field width 0–15 is accepted; only a value over 64 bits is refused with `BoxParseError` |
+| D6 | A box with a 64-bit size of 0 makes `iter_boxes`/`verify_structure` loop forever | `BoxParseError` |
+| D7 | Unlimited zero-width `iloc` extents are materialized (gigabytes for a crafted file) | Up to 2^20 are held, identically to Python; beyond that, `BoxParseError` |
 
 ## MVP Scope
 
 ### Must Have
 
-1. **Core port** (`heic_rotate/core.py` becomes package `heicrotate`). Every
+1. **Core port** (`heic_rotate/core.py` becomes package `core`, `pkg/core`). Every
    function, constant, and error type is ported 1:1 and works on `[]byte`.
    Public Python names are exported, and `_private` names are unexported.
-2. **CLI port** (`heic_rotate/cli.py` becomes package `cli`): `rotate`,
+2. **CLI port** (`heic_rotate/cli.py` becomes package `cli`, `internal/cli`): `rotate`,
    `reverse`, `info`, `-V`, implicit `rotate`, all flags, the exact
    messages, and the exit codes. Parsed with the stdlib only. Plus the Go-only
    `-G`/`--goversion` (E1).
@@ -97,7 +99,8 @@ from the differential corpus.
 4. **Convenience file API:** `RotateFile`, `ReverseFile`, `InfoFile`, with the
    default output naming, overwrite refusal, dry-run, and atomic write. The CLI
    is a thin layer over these.
-5. **Streaming / low-memory engine:** an `io.ReaderAt` → `io.Writer`
+5. **Streaming / low-memory engine** (done: O(meta) memory for well-formed files, with an exact
+   fallback to the `[]byte` engine for anything else; see DESIGN.md): an `io.ReaderAt` → `io.Writer`
    variant that never holds `mdat` in memory. It must produce output
    byte-identical to the `[]byte` engine. Once it passes that gate, the
    CLI and file API switch to it.
@@ -128,7 +131,7 @@ from the differential corpus.
       variant and every file in `testdata/`.
 - [ ] Python `reverse` restores Go-rotated files to the original bytes, and
       Go `reverse` restores Python-rotated files (both directions).
-- [ ] The streaming engine's output equals the `[]byte` engine's for the
+- [x] The streaming engine's output equals the `[]byte` engine's for the
       whole corpus, and its peak heap stays flat as `mdat` grows (the
       multi-MiB fixture uses less than 2 MiB of heap).
 - [ ] The library has zero non-stdlib dependencies (`go.mod` has no
@@ -158,7 +161,7 @@ from the differential corpus.
 
 ### S3: Library use in an upload pipeline
 - **Given:** a Go service with an uploaded HEIC in `[]byte`
-- **When:** it calls `heicrotate.ApplyRotation(data, 3, heicrotate.Options{})`
+- **When:** it calls `core.ApplyRotation(data, 3, core.RotateOptions{})`
 - **Then:** it gets the rotated bytes or a typed error (`*BoxParseError` /
   `*ProvenanceError`), with nothing written to stdout and no panic.
 

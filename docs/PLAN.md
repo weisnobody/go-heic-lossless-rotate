@@ -13,93 +13,123 @@ measured against the real upstream tool from day one.
 ## Implementation Order
 
 ### Phase 0: Scaffolding
-- [ ] `go mod init github.com/pjg/go-heic-lossless-rotate` (`go 1.23`), with `Makefile`
+- [x] `go mod init github.com/pjg/go-heic-lossless-rotate` (`go 1.23`), with `Makefile`
       targets `test`, `difftest`, `lint`, `build`
-- [ ] `version.go` (`Version = "1.7.1"`, `GoRevision = 1`, `GoVersion`,
+- [x] `version.go` (`Version = "1.7.1"`, `GoRevision = 1`, `GoVersion`,
       `GoVersionString()`), `doc.go`
 - [ ] Create the GitHub repo and configure the arena → GitHub push mirror (branches + tags)
-- [ ] `docs/UPSTREAM.md`: pinned commit `70d6c73`, the Python↔Go function map
+      *(owner: user; not done in the Phase 0–1 implementation)*
+- [x] `docs/UPSTREAM.md`: pinned commit `70d6c73`, the Python↔Go function map
       (from DESIGN.md), and a porting log
-- [ ] `docs/COMPAT.md` skeleton with D1–D5
-- [ ] `.gitignore`: `testdata/*`, `!testdata/.keep`, `rotated/`, `bin/`, `dist/`
-- [ ] CI (GitHub Actions on the mirror): `go vet`, `staticcheck`,
+- [x] `docs/COMPAT.md` skeleton with D1–D5
+- [x] `.gitignore`: `testdata/*`, `!testdata/.keep`, `rotated/`, `bin/`, `dist/`
+- [x] CI (GitHub Actions on the mirror): `go vet`, `staticcheck`,
       `go test -race ./...` on linux/macos/windows
 
 ### Phase 1: Test foundation
-- [ ] `internal/synth`: port of `synth_heic.py` (`BuildSyntheticHEIC(Options)`
+- [x] `internal/synth`: port of `synth_heic.py` (`BuildSyntheticHEIC(Options)`
       with layout, include_irot, irot_value, include_exif, exif_orientation,
       exif_position, extra_mdat)
-- [ ] `difftest/` harness: locate `$HEIC_ROTATE_PY_SRC`, run the Python CLI and
-      generator, compare bytes, stdout, stderr, and exit codes. Allow-list for
-      COMPAT cases.
-- [ ] **Gate:** the Go synth output is byte-identical to Python's `synth_heic.py` for
+- [x] `difftest/` harness: locate `$HEIC_ROTATE_PY_SRC`, run the Python CLI and
+      generator, compare bytes, stdout, stderr, and exit codes. (The COMPAT
+      allow-list moved to Phase 3, where the first divergences appear.)
+- [x] **Gate:** the Go synth output is byte-identical to Python's `synth_heic.py` for
       every parameter combination
 
 ### Phase 2: Core port (`core.go`), in `core.py` order
-- [ ] Errors, constants, `ProvenanceUUID` (plus the UUIDv5 derivation test),
+- [x] Errors, constants, `ProvenanceUUID` (plus the UUIDv5 derivation test),
       `versionTuple`, `VersionString`
-- [ ] `pyfmt.go` helpers, unit-tested against literal Python strings
-- [ ] Box primitives: `ReadBoxHeader`, `IterBoxes` (lazy), `FindChild`,
+- [x] `pyfmt.go` helpers, unit-tested against literal Python strings
+- [x] Box primitives: `ReadBoxHeader`, `IterBoxes` (lazy), `FindChild`,
       `FindUniqueChild`
-- [ ] `ParsePitm`, `ParseIpma`/`BuildIpma`, `ParseIpcoChildren`
-- [ ] `ParseIloc`/`BuildIlocContent`/`PatchIlocOffsetsAtThreshold`
-- [ ] `ParseIinfItems`, Exif orientation maps, `FindExifItemLocation`,
+- [x] `ParsePitm`, `ParseIpma`/`BuildIpma`, `ParseIpcoChildren`
+- [x] `ParseIloc`/`BuildIlocContent`/`PatchIlocOffsetsAtThreshold`
+- [x] `ParseIinfItems`, Exif orientation maps, `FindExifItemLocation`,
       `FindExifOrientationField`
-- [ ] Provenance: `Crc32ExcludingRange`, `FindProvenanceBox`,
+- [x] Provenance: `Crc32ExcludingRange`, `FindProvenanceBox`,
       `ParseProvenance`(+`Lenient`), `BuildProvenanceBox`, `LocateStructures`,
       the rotation helpers
-- [ ] `ApplyRotation` (fast path, slow path, Exif sync, provenance
+- [x] `ApplyRotation` (fast path, slow path, Exif sync, provenance
       create/update/v1→v2 migrate/resize)
-- [ ] `restoreMetaProvenanceSpan`, `prepareReversal`,
+- [x] `restoreMetaProvenanceSpan`, `prepareReversal`,
       `iterReconstructedChunks`, `ReverseRotation`, `VerifyReversible`
-- [ ] `GatherInfo`, `FormatInfo`, `VerifyStructure`
-- [ ] Bounds-check audit for D2/D4/D5: every Python crash path returns a typed error
-- [ ] Port the test groups 1, 2, and 6 listed below
-- [ ] **Gate:** the library-level difftest (Go `ApplyRotation`/`ReverseRotation` vs
+- [x] `GatherInfo`, `FormatInfo`, `VerifyStructure`
+- [x] Bounds-check audit for D2/D4/D5: every Python crash path returns a typed error
+- [x] Port the test groups 1, 2, and 6 listed below (plus the core-only
+      group 4 and 5 tests; group 2's CLI self-check method moves to Phase 3)
+- [x] **Gate:** the library-level difftest (Go `ApplyRotation`/`ReverseRotation` vs
       Python `apply_rotation`/`reverse_rotation`, via a small Python driver)
       shows zero diffs, including verbose log text
+- [x] Gate result (2026-10-19): 103,396 cases over 18,043 inputs, zero
+      unexplained differences (allowed: D2 x2037, D5 x16, D6 x15); 794
+      formatting cases vs the live interpreter. See
+      [plans/2026-10-19-implementation-phase-2.md](plans/2026-10-19-implementation-phase-2.md).
 
 ### Phase 3: CLI port
-- [ ] `cli/args.go`: the argparse-compatible parser (DESIGN.md § argparse-compatible
+- [x] `cli/args.go`: the argparse-compatible parser (DESIGN.md § argparse-compatible
       CLI parser)
-- [ ] `cli/cli.go`: `buildParser`, `insertImplicitRotate`, `Main`, `run`.
+- [x] `cli/cli.go`: `buildParser`, `insertImplicitRotate`, `Main`, `run`.
       Messages and exit codes are 1:1 with `cli.py`. Default output naming uses
       the D1 rule.
-- [ ] `cmd/heic-rotate`, `cmd/heic-lossless-rotate`
-- [ ] `-G`/`--goversion` (E1). Tests: output format, exit 0, top-level only
+- [x] `cmd/heic-rotate`, `cmd/heic-lossless-rotate`
+- [x] `-G`/`--goversion` (E1). Tests: output format, exit 0, top-level only
       (`rotate -G` is a usage error), and `-V` output unchanged
-- [ ] Port `TestCLI` plus group 5's CLI tests (in-process via `cli.Main`, plus a
+- [x] Port upstream's `test_cli_self_check_aborts_and_writes_nothing_on_failure`
+      (deferred from Phase 2)
+- [x] Port `TestCLI` plus group 5's CLI tests (in-process via `cli.Main`, plus a
       few subprocess tests against the built binaries)
-- [ ] Difftest: the argv edge-case table vs argparse (exit codes), and the full CLI
+- [x] Difftest COMPAT allow-list (match cases by COMPAT.md ID)
+- [x] Difftest: the argv edge-case table vs argparse (exit codes), and the full CLI
       corpus (bytes, stdout, stderr, exit codes)
-- [ ] **Gate:** zero unexplained CLI diffs, and every allowed diff is listed in COMPAT.md
+- [x] **Gate:** zero unexplained CLI diffs, and every allowed diff is listed in COMPAT.md
+- [x] Gate result (2026-10-19): 2,556 CLI cases (184 captured argv, 2,000 generated
+      argv sequences, 360 operational, 10 error, 2 D1), zero unexplained differences
+      (allowed: E1 x2, D2 x2, D1 x2), plus 6 real-subprocess cross-checks. See
+      [plans/2026-10-19-implementation-phase-3.md](plans/2026-10-19-implementation-phase-3.md).
 
 ### Phase 4: File API (`file.go`)
-- [ ] `RotateFile(in, out string, deltaTurns int, opts FileOptions) (Result, error)`,
+- [x] `RotateFile(in, out string, deltaTurns int, opts FileOptions) (Result, error)`,
       `ReverseFile(...)`, `InfoFile(path) (*Info, error)`, with
       `FileOptions{Force, DryRun, NoExifSync, IgnoreTamper bool; Log io.Writer}`.
       `Result` reports the output path, size, and delta vs input (for the
       `[ok] wrote …` and `[dry-run] …` lines).
-- [ ] `DefaultRotateOutput(in)` / `DefaultReverseOutput(in)` (D1), exported
-- [ ] Atomic temp-and-rename write (D3), overwrite refusal, mode preservation
-- [ ] Refactor `cli.run` onto the file API. The difftest must stay green.
-- [ ] Port `TestSameFileInputOutput` and `TestDryRunSizeReport` at the file-API level
+- [x] `DefaultRotateOutput(in)` / `DefaultReverseOutput(in)` (D1), exported
+- [x] Atomic temp-and-rename write (D3), overwrite refusal, mode preservation
+- [x] Refactor `cli.run` onto the file API. The difftest must stay green.
+- [x] Port `TestSameFileInputOutput` and `TestDryRunSizeReport` at the file-API level
+- [x] Result (2026-10-19): D3 writes match Python's in-place write in every probed case
+      (symlinks, dangling links, modes, read-only outputs and directories, hard links). The CLI
+      gate grew to 2,566 cases and now compares modes and symlinks. See
+      [plans/2026-10-19-implementation-phase-4.md](plans/2026-10-19-implementation-phase-4.md).
 
 ### Phase 5: Streaming engine (`stream.go`)
-- [ ] Spliced view (`io.ReaderAt` over input ranges plus literal segments) and
+- [x] Spliced view (`io.ReaderAt` over input ranges plus literal segments) and
       a streaming CRC32 over views
-- [ ] `ApplyRotationReaderAt(r io.ReaderAt, size int64, deltaTurns int, opts)
+- [x] `ApplyRotationReaderAt(r io.ReaderAt, size int64, deltaTurns int, opts)
       (*View, error)`, `ReverseRotationReaderAt(...)`, `VerifyReversibleReaderAt`,
       `GatherInfoReaderAt`. `View` exposes `Size()`, `ReadAt`, and `WriteTo(io.Writer)`.
-- [ ] Cross-check test: the stream engine equals the `[]byte` engine over the whole
+- [x] Cross-check test: the stream engine equals the `[]byte` engine over the whole
       corpus (all synth variants, multi-edit chains, v1 records, tamper
       cases, mid-stream Exif, extra mdat, testdata/)
-- [ ] Heap-bound test: rotating and reversing a 64 MiB synthetic stays under
+- [x] Heap-bound test: rotating and reversing a 64 MiB synthetic stays under
       2 MiB of heap growth
-- [ ] **Go/No-Go gate:** the cross-check is green and the heap bound is met, so
+- [x] **Go/No-Go gate:** the cross-check is green and the heap bound is met, so
       `file.go` (and therefore the CLI) switches to the streaming engine. If not, ship
       with the `[]byte` engine behind the file API and keep stream.go
       unexported until it passes.
+- [x] Result (2026-10-19): Go. The cross-check over 17,569 inputs is identical, and every successful operation on
+      a well-formed file streams. A 64 MiB rotate allocates about 0.7 MB in about 170 ms. Both Python gates are green
+      through the streaming file API. See
+      [plans/2026-10-19-implementation-phase-5.md](plans/2026-10-19-implementation-phase-5.md).
+
+### Package layout (after Phase 5)
+- [x] Split the module-root package into importable `pkg/core`, `pkg/stream`, `pkg/files`,
+      and `pkg/version`, with the CLI, the byte-access helpers, and shared test helpers under
+      `internal/` (`internal/cli`, `internal/pybytes`, `internal/tests`). The file names
+      in the phase headings above are from before this move; see
+      [DESIGN.md § Repository Layout](DESIGN.md#repository-layout).
+- [x] Result (2026-10-19): every test from before the move still runs; only the pybytes
+      tests were renamed and split. Both Python gates are green.
 
 ### Phase 6: Release
 - [ ] Verify the mirror delivers tags: push a throwaway tag to arena, confirm it appears
@@ -109,10 +139,13 @@ measured against the real upstream tool from day one.
       `+go.N` tag (do a dry run with `--snapshot` against a local `v1.7.1+go.2` tag).
 - [ ] Release workflow: tag-vs-`GoVersion` consistency check (DESIGN.md § Go port
       version and release tags)
-- [ ] README: install (`go install`, release download), usage (point to
-      upstream for semantics), library examples, compat notes
-- [ ] Package docs with `Example*` tests for `ApplyRotation`,
-      `RotateFile`, and the streaming API
+- [x] README: self-contained CLI reference (usage, examples, options, exit codes,
+      limitations), differences from the Python tool, and a short library tour
+      pointing to the package docs (2026-10-19)
+- [ ] README: install (`go install`, release download, `go get` for the library)
+- [x] Package docs (`doc.go` guides) with `Example*` tests for `ApplyRotation`,
+      `RotateFile`, and the streaming API, and a concurrency test per package
+      confirming the documented concurrency guarantees (2026-10-19)
 - [ ] README: document `-G`, the `+go.N` scheme, and that Go-only fixes need
       `go install …@vX.Y.Z+go.N`, because `@latest` ignores metadata tags
 - [ ] Tag `v1.7.1` on arena (= GoVersion `1.7.1+go.1`) and confirm the GitHub
@@ -128,7 +161,7 @@ measured against the real upstream tool from day one.
 | 2 | `TestSyntheticRoundTrips` | `TestSyntheticRoundTrips` (table of 8 combos + subtests) | |
 | 2 | `TestProvenanceVersionAndSelfCheck` | same | the self-check failure uses a test hook in place of `mock.patch` |
 | 2 | `TestProvenanceLeanFormat` | same | port the `_make_v1_style_record` helper |
-| 3 | `TestCLI` | `cli.TestCLI` | in-process `Main`, plus subprocess smoke tests |
+| 3 | `TestCLI` | `cli.TestCLI` (`internal/cli`) | in-process `Main`, plus subprocess smoke tests |
 | 4 | `TestRealFiles` | `TestRealFiles` | `t.Skip` when testdata is empty, and writes `rotated/` |
 | 5 | `TestMdatContentIndependence` | same | |
 | 5 | `TestLargeMdatFixtures` | same | also run against the stream engine |
