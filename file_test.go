@@ -190,7 +190,7 @@ func TestRotateFileSelfCheckAbortsAndWritesNothingOnFailure(t *testing.T) {
 	writeSynth(t, in, nil)
 	real := verifyReversibleHook
 	t.Cleanup(func() { verifyReversibleHook = real })
-	verifyReversibleHook = func([]byte, ReverseOptions) error { return &ProvenanceError{Msg: "simulated failure"} }
+	verifyReversibleHook = func(*View) error { return &ProvenanceError{Msg: "simulated failure"} }
 
 	_, err := RotateFile(in, out, 1, FileOptions{})
 	var pe *ProvenanceError

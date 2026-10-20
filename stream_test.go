@@ -8,10 +8,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pjg/go-heic-lossless-rotate/internal/craft"
 	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
@@ -243,6 +246,67 @@ func TestStreamMatchesBytesEngine(t *testing.T) {
 				}
 			}
 			t.Logf("%d inputs; %d streamed every successful operation; %d successful operations fell back", len(names), streamed, totalFallbacks)
+		})
+	}
+}
+
+func TestRotateFileSameFileHardLinked(t *testing.T) {
+	// Input == output, and the target is hard-linked: the in-place write
+	// must not overwrite bytes the streaming engine is still reading.
+	dir := t.TempDir()
+	path, other := filepath.Join(dir, "photo.heic"), filepath.Join(dir, "link.heic")
+	original := writeSynth(t, path, func(o *synth.Options) {
+		o.Layout, o.IncludeExif, o.MdatPayload = synth.MetaFirst, true, cyclicPayload(256<<10)
+	})
+	if err := os.Link(path, other); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if _, err := RotateFile(path, path, 1, FileOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	want := mustApply(t, original, 1)
+	if !bytes.Equal(mustRead(t, path), want) || !bytes.Equal(mustRead(t, other), want) {
+		t.Error("in-place rotate of a hard-linked file corrupted it or broke the link")
+	}
+	if _, err := ReverseFile(path, path, FileOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(mustRead(t, other), original) {
+		t.Error("in-place reverse of a hard-linked file didn't restore the original")
+	}
+}
+
+func TestFileAPIHeapBound(t *testing.T) {
+	if raceEnabled || testing.Short() {
+		t.Skip("allocation counts are inflated under -race; large file")
+	}
+	const payload = 64 << 20
+	for _, layout := range []synth.Layout{synth.MdatFirst, synth.MetaFirst} {
+		t.Run(string(layout), func(t *testing.T) {
+			dir := t.TempDir()
+			in, rotated, restored := filepath.Join(dir, "in.heic"), filepath.Join(dir, "r.heic"), filepath.Join(dir, "back.heic")
+			writeSynth(t, in, func(o *synth.Options) {
+				o.Layout, o.IncludeExif, o.ExifPosition, o.MdatPayload = layout, true, synth.ExifMiddle, cyclicPayload(payload)
+			})
+			start := time.Now()
+			rot := allocatedBytes(func() {
+				if _, err := RotateFile(in, rotated, 1, FileOptions{}); err != nil {
+					t.Fatal(err)
+				}
+			})
+			rotTime := time.Since(start)
+			rev := allocatedBytes(func() {
+				if _, err := ReverseFile(rotated, restored, FileOptions{}); err != nil {
+					t.Fatal(err)
+				}
+			})
+			t.Logf("64 MiB: rotate allocated %d bytes in %v, reverse %d bytes", rot, rotTime, rev)
+			if rot > 2<<20 || rev > 2<<20 {
+				t.Errorf("heap growth over 2 MiB: rotate %d, reverse %d", rot, rev)
+			}
+			if !bytes.Equal(mustRead(t, in), mustRead(t, restored)) {
+				t.Error("round trip through the streaming file API isn't byte-identical")
+			}
 		})
 	}
 }
