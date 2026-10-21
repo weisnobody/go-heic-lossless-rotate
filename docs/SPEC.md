@@ -138,7 +138,7 @@ from the differential corpus.
       `require`).
 - [ ] No panics on malformed input: every Python-traceback case in D2
       yields a typed error.
-- [ ] `go install github.com/pjg/go-heic-lossless-rotate/cmd/heic-rotate@latest`
+- [ ] `go install github.com/weisnobody/go-heic-lossless-rotate/cmd/heic-rotate@latest`
       works, and goreleaser publishes both binaries for all targets.
 - [ ] `-G` reports `1.7.1+go.N` matching the release tag, while `-V`, `TVER`,
       and `info` report only `1.7.1`.

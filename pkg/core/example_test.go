@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 )
 
 // Work on bytes in memory instead of files.

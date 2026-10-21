@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/tests"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 )
 
 // readAllView materializes v through WriteTo, the path a caller writing a

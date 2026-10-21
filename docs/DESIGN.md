@@ -50,14 +50,14 @@ deliberate divergences (D1–D5).
 | CRC32 | `hash/crc32` IEEE | Same polynomial and init as `zlib.crc32`, which is required for C1. |
 | CLI parsing | Hand-written argparse-compatible parser (`internal/cli/args.go`) | `flag` can't do flags after positionals, flags on both sides of the subcommand, or argparse prefix abbreviations. |
 | Release | goreleaser | Two builds (`heic-rotate`, `heic-lossless-rotate`), darwin/linux/windows × amd64/arm64, checksums, GitHub release. |
-| Module path | `github.com/pjg/go-heic-lossless-rotate` | `go install …@latest` works for anyone. |
-| Hosting | **Primary:** `arena.the42.net/pjg/go-heic-lossless-rotate` (origin). **Mirror:** GitHub, via push mirror of all branches **and tags** | All development and pushes go to arena. The Go module proxy, `go install` users, and goreleaser all read from GitHub, so the mirror must never lag a tag. |
+| Module path | `github.com/weisnobody/go-heic-lossless-rotate` | `go install …@latest` works for anyone. |
+| Hosting | **Primary:** `arena.the42.net/pjg/go-heic-lossless-rotate` (origin). **Mirror:** `github.com/weisnobody/go-heic-lossless-rotate` (public; also the module path), via push mirror of all branches **and tags** | All development and pushes go to arena. The Go module proxy, `go install` users, and goreleaser all read from GitHub, so the mirror must never lag a tag. |
 | CI / release | GitHub Actions on the mirror | It runs tests on push and goreleaser on a tag push, triggered when the mirror sync delivers the tag. No arena CI is assumed. |
 
 ## Repository Layout
 
 ```
-go.mod                          module github.com/pjg/go-heic-lossless-rotate
+go.mod                          module github.com/weisnobody/go-heic-lossless-rotate
 pkg/core/doc.go                 ← heic_rotate/__init__.py + module docstrings
 pkg/core/core.go                ← core.py       (1:1 port)
 pkg/core/pyerrors.go            IndexError/struct.error as *BoxParseError (COMPAT D2)
@@ -85,7 +85,7 @@ The library is four importable packages under `pkg/`; the module root holds no p
 
 | Package | Import path | Contents |
 |---|---|---|
-| `core` | `github.com/pjg/go-heic-lossless-rotate/pkg/core` | The 1:1 `core.py` port over `[]byte`: `ApplyRotation`, `ReverseRotation`, `GatherInfo`, the parsers and builders, the error types |
+| `core` | `github.com/weisnobody/go-heic-lossless-rotate/pkg/core` | The 1:1 `core.py` port over `[]byte`: `ApplyRotation`, `ReverseRotation`, `GatherInfo`, the parsers and builders, the error types |
 | `stream` | `…/pkg/stream` | `ApplyRotationReaderAt` and friends, returning a `View` |
 | `files` | `…/pkg/files` | `RotateFile`, `ReverseFile`, `InfoFile`, default output naming, atomic writes |
 | `version` | `…/pkg/version` | `Version`, `GoRevision`, `GoVersion`, `GoVersionString` |
@@ -235,8 +235,17 @@ differences that make a helper mandatory:
   show up in `go list -m -versions` or `@latest`.
   - `go install …@latest` resolves to the plain `vX.Y.Z` tag, i.e. the `+go.1` build.
   - Go-only fixes reach `go install` users only through
-    `@vX.Y.Z+go.N` (resolved to a pseudo-version) or `@<commit>`.
-  - GitHub release binaries (goreleaser) carry every `+go.N`.
+    `@vX.Y.Z+go.N` (resolved to a pseudo-version) or `@<commit>`. Checked end to end on
+    2026-10-20 against a local clone: `@v1.7.1+go.2` installs the tagged commit as
+    `v1.7.2-0.<time>-<hash>`, while `@latest` and `-versions` see only `v1.7.1`.
+  - GitHub release binaries (goreleaser) carry every `+go.N`. Archive names replace `+`
+    with `-` (`go-heic-lossless-rotate_1.7.1-go.2_linux_amd64.tar.gz`), because GitHub
+    renames release assets with special characters and `checksums.txt` would no longer
+    match them.
+  - **Pipeline:** `.github/workflows/release.yml` runs on `v*` tags: `TestReleaseTag`
+    (the tag check, `make release-check TAG=…` locally), then the whole of `ci.yml`, then
+    goreleaser (`.goreleaser.yaml`). A manual run builds a snapshot artifact without
+    publishing. `make snapshot` is the local dry run.
   - We accept this: Go-only fixes should be rare, and the README documents the
     explicit `@vX.Y.Z+go.N` form.
 - **Trade-offs:** `go install @latest` can lag behind Go-only fixes until

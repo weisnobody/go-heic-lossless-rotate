@@ -17,10 +17,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/craft"
-	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
-	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/craft"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/pyfmt"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 )
 
 // goResult is one Go-side outcome, in the shape pydriver.py reports.

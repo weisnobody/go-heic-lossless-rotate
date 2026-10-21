@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 )
 
 // box builds a plain box with an 8-byte header (test helper).

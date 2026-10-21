@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/version"
 )
 
 func TestProvenanceUUIDDerivation(t *testing.T) {

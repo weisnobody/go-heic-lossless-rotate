@@ -26,8 +26,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/stream"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/stream"
 )
 
 // FileOptions are RotateFile's and ReverseFile's options - the CLI's flags.

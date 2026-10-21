@@ -31,9 +31,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
-	"github.com/pjg/go-heic-lossless-rotate/internal/pyfmt"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/pybytes"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/pyfmt"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/version"
 )
 
 // BoxParseError reports malformed or unsupported container structure

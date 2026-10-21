@@ -17,10 +17,6 @@ Ostrozhansky. It is both:
 
 It has no dependencies outside the Go standard library.
 
-> **Status: pre-release.** Everything below works and is verified against the
-> Python tool (see [docs/PLAN.md](docs/PLAN.md)). Release binaries and
-> `go install` come with the first release.
-
 > **Why "lossless" matters:** HEIC, like JPEG, is a lossy format. Every
 > decode and re-encode discards some image quality, and the loss compounds
 > with each re-save. This tool only ever edits the rotation tag, so no
@@ -33,7 +29,7 @@ Why in Go?  Was building a tool (in Go) to be able to fix rotation on images and
 ## Contents
 
 - [What it does](#what-it-does)
-- [Building](#building)
+- [Install](#install)
 - [Usage](#usage)
   - [Examples](#examples)
 - [Before you start](#before-you-start)
@@ -62,12 +58,44 @@ Why in Go?  Was building a tool (in Go) to be able to fix rotation on images and
 - **Uses little memory.** Files are streamed: only the metadata (typically a
   few KB) is held in memory, so a 64 MiB photo is rotated with under 1 MB.
 
-## Building
+## Install
 
-Until the first release, build from a clone of this repository with Go 1.23
-or later:
+Both ways install two commands, `heic-rotate` and `heic-lossless-rotate`;
+see [Usage](#usage).
+
+**Download a release.** Each
+[release](https://github.com/weisnobody/go-heic-lossless-rotate/releases) has
+an archive for macOS, Linux, and Windows (Intel/AMD and ARM), plus
+`checksums.txt`. Unpack it and put both commands somewhere on your `PATH`.
+They're single files with nothing else to install.
+
+On macOS, a downloaded binary is quarantined until you allow it (System
+Settings → Privacy & Security), or clear the flag yourself:
+`xattr -d com.apple.quarantine heic-rotate heic-lossless-rotate`.
+
+**With Go 1.23 or later:**
 
 ```bash
+go install github.com/weisnobody/go-heic-lossless-rotate/cmd/heic-rotate@latest
+go install github.com/weisnobody/go-heic-lossless-rotate/cmd/heic-lossless-rotate@latest
+```
+
+`@latest` installs the newest upstream version's first Go release; a later
+Go-only fix needs its tag spelled out (see [Versions](#versions)).
+
+**As a library:**
+
+```bash
+go get github.com/weisnobody/go-heic-lossless-rotate@latest
+```
+
+See [Using it as a Go library](#using-it-as-a-go-library).
+
+**From source:**
+
+```bash
+git clone https://github.com/weisnobody/go-heic-lossless-rotate.git
+cd go-heic-lossless-rotate
 make build      # ./bin/heic-rotate and ./bin/heic-lossless-rotate
 ```
 
@@ -268,9 +296,9 @@ All three give identical results.
 
 ```go
 import (
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/files"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/stream"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/files"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/stream"
 )
 
 // Files: everything the command does. Log: os.Stdout prints its messages.
@@ -317,6 +345,25 @@ The port implements upstream **v1.7.1** (see
 shows it, exactly as the Python tool does. The Go port's own releases add
 build metadata, as in `1.7.1+go.1`; `-G` shows that version and the Go
 toolchain it was built with.
+
+Release tags follow the same scheme:
+
+| Release | Tag | `-G` shows |
+|---|---|---|
+| First Go release of upstream 1.7.1 | `v1.7.1` | `1.7.1+go.1` |
+| A later Go-only fix | `v1.7.1+go.2`, `v1.7.1+go.3`, ... | `1.7.1+go.2`, ... |
+| First Go release of upstream 1.8.0 | `v1.8.0` | `1.8.0+go.1` |
+
+Release downloads exist for every tag. Go's module tools, though, ignore
+tags with build metadata, so `go install …@latest` and `go get …@latest`
+stop at the plain `vX.Y.Z` tag. To get a Go-only fix, name its tag:
+
+```bash
+go install github.com/weisnobody/go-heic-lossless-rotate/cmd/heic-rotate@v1.7.1+go.2
+```
+
+Go records it as a pseudo-version (such as `v1.7.2-0.20261020…-abcdef123456`)
+rather than as `v1.7.1+go.2`; `heic-rotate -G` confirms what you have.
 
 ## Development
 

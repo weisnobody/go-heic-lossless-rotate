@@ -27,8 +27,8 @@ import (
 	"math"
 	"sort"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/pybytes"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 )
 
 // exifBlobCap bounds how much of an Exif item the streaming engine reads; a
