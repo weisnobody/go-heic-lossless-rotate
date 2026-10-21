@@ -61,6 +61,8 @@ go.mod                          module github.com/weisnobody/go-heic-lossless-ro
 pkg/core/doc.go                 ← heic_rotate/__init__.py + module docstrings
 pkg/core/core.go                ← core.py       (1:1 port)
 pkg/core/pyerrors.go            IndexError/struct.error as *BoxParseError (COMPAT D2)
+pkg/core/orient.go              irot+imir orientation math, libheif's table (Go-only, COMPAT E2/D8)
+pkg/core/mirror.go              ApplyMirror and reverse's 'imir' step (Go-only, COMPAT E2)
 pkg/core/*_test.go              ← tests/test_heic_rotate.py (ported; package core_test)
 pkg/version/version.go          ← _version.py   Version = "1.7.1", GoRevision, GoVersion
 pkg/stream/stream.go            streaming engine (Go-only)
@@ -68,6 +70,7 @@ pkg/files/file.go               file-level API (Go-only)
 internal/cli/cli.go             ← cli.py        Main, buildParser, insertImplicitRotate, run
 internal/cli/args.go            argparse-compatible parser (Go-only)
 internal/pybytes/               Python slice/index/struct semantics
+pixeltest/                      rotate/mirror vs real decoders: heif-dec, Apple ImageIO (build tag `pixeltest`)
 internal/pyfmt/                 Python repr/format helpers (shared with synth and the CLI)
 internal/synth/synth.go         ← tests/synth_heic.py
 internal/craft/                 crafted-structure builder for the corpus tests
@@ -296,6 +299,25 @@ differences that make a helper mandatory:
 - **Reasoning:** library callers get the CLI's safety checks, and the write path has a single
   implementation, which the CLI difftest covers.
 
+### Mirroring (E2) and orientation (D8)
+- **Choice:** an orientation is an Exif Orientation value (1-8), composed from the primary item's associated
+  `irot`/`imir` properties in `ipma` order with libheif's `orientation_concat` table (`pkg/core/orient.go`).
+  `rotate` on a file with an `imir`, and the un-flip of `mirror`, try all four `irot` values and keep the one that
+  displays as the target (`solveIrot`), so any property order works without hand-derived algebra.
+- **Shared orchestration:** `ApplyRotationEnv` is a thin wrapper over `applyEdit`, which is apply_rotation's body with
+  Go-only blocks marked `COMPAT E2/D8`. A mirror replaces only the FAST/SLOW PATH step (`mirrorEdit`); the snapshots,
+  Exif sync, and provenance tail are the same code. The SLOW PATH's container bookkeeping is factored into
+  `iprpWithAppended`, `iprpWithoutLast`, and `spliceIprp`, which the mirror code reuses (with a negative size change
+  for an un-flip).
+- **Invariant:** the `imir` this tool inserts is always the last `ipco` child and the primary item's last association.
+  The first flip of a file with no `irot` inserts `irot=0` just before it, so no later edit ever inserts anything after
+  it, and reverse and un-flip can strip it the way upstream strips its own `irot`. A file's own `imir` is never edited.
+- **Provenance:** `OIMR` (empty) marks an inserted `imir`; such a record is format v3, every other one stays v2, so
+  rotate-only output remains byte-identical to Python's and Python refuses a v3 record cleanly. `restoreImir` runs
+  before the `irot` restore and keeps `meta`'s size field consistent, since it re-locates boxes afterwards.
+- **Ground truth:** unit tests check every edit against an independent model of a decoder (a labelled grid
+  transformed per `ipma` order); `make pixeltest` checks real decoders.
+
 ### Atomic writes (D3)
 - **Choice:** `writeOutput` writes a temp file in the output's directory, fsyncs it, and renames it over the
   target. The Python probe (see the Phase 4 plan) showed seven ways a naive version would visibly
@@ -373,6 +395,7 @@ differences that make a helper mandatory:
 | **Engine cross-check** | `ApplyRotation` vs the streaming engine, and `ReverseRotation` vs `VerifyReversible` vs the streaming engine, over the whole corpus | always |
 | **Differential** (`-tags difftest`) | Runs `python3 -m heic_rotate` (PYTHONPATH = `$HEIC_ROTATE_PY_SRC`) and Go `cli.Main` on the same argv and fixtures, and compares output bytes, stdout, stderr, and exit codes. Also runs cross-reversal (Go rotate → Py reverse, Py rotate → Go reverse) and parser argv tables. COMPAT.md cases are excluded via an allow-list. | `make difftest`, CI job with Python 3.14 + upstream checkout at the pinned commit. The CLI is driven in-process through pydriver's `cli` op, plus a few real `python -m heic_rotate` processes. |
 | **Real files** | `testdata/*.heic` round-trip, plus rotated copies to `rotated/` for visual checks | when testdata is present |
+| **Decoders** (`-tags pixeltest`) | Encodes a test pattern with `heif-enc` and `sips`, rotates and mirrors it, and compares what `heif-dec` and Apple ImageIO display against the edits applied on screen | `make pixeltest`, wherever the tools are installed |
 
 Python-specific upstream tests get Go equivalents:
 - `TestSharedReconstructionCode` (bytecode inspection) becomes a test that both

@@ -60,6 +60,7 @@ These are the meaning of "drop-in". Each one is a hard requirement.
 | # | Extension | Notes |
 |---|---|---|
 | E1 | **`-G` / `--goversion`**: prints the Go port's own version (`1.7.1+go.N`), the upstream version it implements, and the Go toolchain it was built with, then exits `0`. It's a top-level flag only, like `-V`. | Python rejects it (usage error, exit 2). Listed in COMPAT.md and excluded from the differential argv table. `-V`, `TVER`, and `info` are unaffected and still report only `1.7.1` (C3). |
+| E2 | **Mirroring**: the `mirror {horizontal,vertical}` subcommand, `core.ApplyMirror`, `stream.ApplyMirrorReaderAt`, and `files.MirrorFile` flip the image through the HEIF `imir` property, as losslessly and reversibly as `rotate`. `info` reports flips (exit `5` for a net flip). | A mirrored file's provenance record is format v3 (an `OIMR` entry), which Python refuses to rotate or reverse rather than mishandle. Every file that was never mirrored still gets Python's exact v2 record (C1, C2). See [COMPAT.md § E2](COMPAT.md#e2-mirroring). |
 
 **Port versioning.** The Go port's version is the mirrored upstream version
 plus semver build metadata: `<upstream>+go.<N>`, where `N` counts Go releases for
@@ -82,6 +83,7 @@ from the differential corpus.
 | D5 | `iloc` values are arbitrary-precision ints | Any field width 0–15 is accepted; only a value over 64 bits is refused with `BoxParseError` |
 | D6 | A box with a 64-bit size of 0 makes `iter_boxes`/`verify_structure` loop forever | `BoxParseError` |
 | D7 | Unlimited zero-width `iloc` extents are materialized (gigabytes for a crafted file) | Up to 2^20 are held, identically to Python; beyond that, `BoxParseError` |
+| D8 | On a file whose primary item has an `imir`, `rotate` adds the delta to `irot` regardless of where the `imir` sits, which turns the display clockwise when `imir` follows `irot`; the Exif sync ignores the flip | `rotate` turns the display counter-clockwise whatever the layout, and the Exif sync writes the whole orientation (1-8). Files without an `imir` are unaffected. |
 
 ## MVP Scope
 
@@ -112,9 +114,10 @@ from the differential corpus.
 
 ### Explicitly Excluded
 
-- **New features beyond upstream** (batch/recursive mode, mirroring/`imir`,
-  absolute-angle mode). Behavior stays pinned to upstream until upstream
-  adds it.
+- **New features beyond upstream** (batch/recursive mode, absolute-angle
+  mode). Behavior stays pinned to upstream until upstream adds it. The one
+  exception is mirroring (E2, added 2026-10-21), which needed the D8 fix to
+  be coherent.
 - **Byte-identical help text.** Argparse's help formatter isn't worth
   reproducing (C6).
 - **Multiple `ipma`/`ipco` boxes, 64-bit `meta` headers, Exif via

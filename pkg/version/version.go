@@ -26,7 +26,7 @@ const Version = "1.7.1"
 // GoRevision counts Go-port releases for this Version. It resets to 1 on
 // each upstream version bump. See docs/DESIGN.md § Go port version and
 // release tags.
-const GoRevision = 1
+const GoRevision = 2
 
 // GoVersion is the Go port's own version: Version plus semver build
 // metadata, e.g. "1.7.1+go.1". It never reaches a file - only -G output and

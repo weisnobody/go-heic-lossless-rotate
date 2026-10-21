@@ -206,8 +206,8 @@ type streamInput struct {
 //   - the top level tiles the file exactly, with one 'meta' box (32-bit
 //     header) and the first provenance box, if any, right after it;
 //   - the span's own structure passes VerifyStructure;
-//   - the boxes the core reads at fixed offsets (pitm, iinf/infe, irot, the
-//     provenance box) are large enough for those reads;
+//   - the boxes the core reads at fixed offsets (pitm, iinf/infe, irot,
+//     imir, the provenance box) are large enough for those reads;
 //   - no absolute-offset iloc extent points into the span.
 //
 // The remaining reads past a box's end are the length-driven parsers
@@ -350,7 +350,7 @@ func fixedReadsFit(span []byte) bool {
 						return false
 					}
 					for _, prop := range props {
-						if prop.Is("irot") && !need(prop, 1) {
+						if (prop.Is("irot") || prop.Is("imir")) && !need(prop, 1) {
 							return false
 						}
 					}
@@ -580,23 +580,45 @@ func flushLog(w io.Writer, b *bytes.Buffer) {
 // memory and running ApplyRotation. r must stay unchanged and readable
 // while the View is used.
 func ApplyRotationReaderAt(r io.ReaderAt, size int64, deltaTurns int, opts core.RotateOptions) (*View, error) {
+	return applyReaderAt(r, size, opts, "rotate",
+		func(env core.FileEnv, span []byte, o core.RotateOptions) ([]byte, error) {
+			return core.ApplyRotationEnv(env, span, deltaTurns, o)
+		},
+		func(data []byte) ([]byte, error) { return core.ApplyRotation(data, deltaTurns, opts) })
+}
+
+// ApplyMirrorReaderAt is core.ApplyMirror over an io.ReaderAt, streaming
+// the same way as ApplyRotationReaderAt (Go-only, COMPAT E2).
+func ApplyMirrorReaderAt(r io.ReaderAt, size int64, axis core.MirrorAxis, opts core.RotateOptions) (*View, error) {
+	return applyReaderAt(r, size, opts, "mirror",
+		func(env core.FileEnv, span []byte, o core.RotateOptions) ([]byte, error) {
+			return core.ApplyMirrorEnv(env, span, axis, o)
+		},
+		func(data []byte) ([]byte, error) { return core.ApplyMirror(data, axis, opts) })
+}
+
+// applyReaderAt runs an edit on the streamed span, falling back to the
+// []byte engine (whole) for anything unusual.
+func applyReaderAt(r io.ReaderAt, size int64, opts core.RotateOptions, op string,
+	edit func(core.FileEnv, []byte, core.RotateOptions) ([]byte, error),
+	whole func([]byte) ([]byte, error)) (*View, error) {
 	buf := logBuffer(opts.Log)
 	in, err := loadStreamInput(r, size)
 	if err == nil {
 		env := &streamEnv{in: in}
 		var out []byte
-		out, err = core.ApplyRotationEnv(env, in.span, deltaTurns, core.RotateOptions{NoExifSync: opts.NoExifSync, Log: asWriter(buf)})
+		out, err = edit(env, in.span, core.RotateOptions{NoExifSync: opts.NoExifSync, Log: asWriter(buf)})
 		if err == nil {
 			flushLog(opts.Log, buf)
 			return newView(r, env.file(out, true)), nil
 		}
 	}
-	noteFallback("rotate", err)
+	noteFallback(op, err)
 	data, err := readAll(r, size)
 	if err != nil {
 		return nil, err
 	}
-	out, err := core.ApplyRotation(data, deltaTurns, opts)
+	out, err := whole(data)
 	if err != nil {
 		return nil, err
 	}
