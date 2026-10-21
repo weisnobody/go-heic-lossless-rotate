@@ -1392,9 +1392,9 @@ func joinIprp(ipcoHdr, ipmaHdr BoxHeader, newIpcoBox, newIpmaBox []byte) []byte 
 	return makeBox("iprp", newIprpContent)
 }
 
-// iprpWithoutLast builds a replacement 'iprp' box with 'ipco''s last child
-// (lastChild) and the primary item's last association removed, and 'ipma''s
-// flags set to the value flags returns - called only after the associations
+// iprpWithoutLast builds a replacement 'iprp' box with the last 'ipco' child
+// (lastChild) and the primary item's last association removed, and the
+// 'ipma' flags set to the value flags returns - called only after the associations
 // are rebuilt, the order _restore_meta_provenance_span reports errors in.
 // (Go-only factoring, shared by reverse's SLOW PATH and the mirror code.)
 func iprpWithoutLast(data []byte, ipcoHdr, ipmaHdr BoxHeader, ipmaVersion uint8, ipmaEntries []IpmaEntry,
@@ -1423,7 +1423,7 @@ func iprpWithoutLast(data []byte, ipcoHdr, ipmaHdr BoxHeader, ipmaVersion uint8,
 }
 
 // spliceIprp replaces the 'iprp' box s.IprpHdr with newIprpBox in a copy of
-// data, rewriting 'meta''s size field and shifting any 'iloc' absolute
+// data, rewriting the 'meta' size field and shifting any 'iloc' absolute
 // offsets past 'iprp' by the size change. Returns the new buffer and the
 // size change. tag is the log line's prefix. (Go-only factoring of
 // apply_rotation's SLOW PATH container bookkeeping, shared with ApplyMirror,
