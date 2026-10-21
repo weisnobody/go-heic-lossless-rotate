@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"unicode"
-	"unicode/utf8"
 )
 
 // OSError mirrors str(e) for the OSError Python raises from open(), read(),
@@ -25,14 +23,4 @@ func OSError(err error) string {
 		return err.Error()
 	}
 	return fmt.Sprintf("[Errno %d] %s: %s", num, text, StrRepr(pe.Path))
-}
-
-// capitalize upper-cases the first rune, turning Go's errno text ("no such
-// file or directory") into the C library's ("No such file or directory").
-func capitalize(s string) string {
-	r, size := utf8.DecodeRuneInString(s)
-	if r == utf8.RuneError {
-		return s
-	}
-	return string(unicode.ToUpper(r)) + s[size:]
 }

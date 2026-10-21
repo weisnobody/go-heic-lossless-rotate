@@ -43,13 +43,15 @@ upstream:
 fmt:
 	go fmt ./...
 
-## lint: go vet (both build modes), plus staticcheck when installed
+## lint: go vet (both build modes), plus staticcheck when installed (also for GOOS=windows)
 lint:
 	go vet ./...
 	go vet -tags difftest ./...
 	@if command -v staticcheck >/dev/null 2>&1; then \
 		echo "staticcheck ./..." && staticcheck ./... && \
-		echo "staticcheck -tags difftest ./..." && staticcheck -tags difftest ./...; \
+		echo "staticcheck -tags difftest ./..." && staticcheck -tags difftest ./... && \
+		echo "GOOS=windows staticcheck ./..." && GOOS=windows staticcheck ./... && \
+		GOOS=windows staticcheck -tags difftest ./...; \
 	else \
 		echo "staticcheck not installed; skipping (go install honnef.co/go/tools/cmd/staticcheck@latest)"; \
 	fi
