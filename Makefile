@@ -7,7 +7,7 @@ UPSTREAM_REPO   ?= https://github.com/olegoz/heic-lossless-rotate.git
 UPSTREAM_COMMIT := $(shell cat difftest/upstream.commit)
 UPSTREAM_DIR    ?= .upstream
 
-.PHONY: all build run test difftest upstream fmt lint release-check snapshot clean
+.PHONY: all build run test difftest pixeltest upstream fmt lint release-check snapshot clean
 
 all: fmt lint test build
 
@@ -28,6 +28,10 @@ test:
 difftest: upstream
 	HEIC_ROTATE_PY_SRC=$(abspath $(UPSTREAM_DIR)) go test -tags difftest -count=1 ./difftest/...
 
+## pixeltest: check rotate/mirror edits against real decoders (heif-enc/heif-dec, and on macOS sips + ImageIO via swiftc); missing tools are skipped
+pixeltest:
+	go test -tags pixeltest -count=1 -v ./pixeltest/...
+
 ## upstream: clone (if missing) and check out the pinned upstream commit
 upstream:
 	@if [ ! -d "$(UPSTREAM_DIR)/.git" ]; then \
@@ -47,6 +51,7 @@ fmt:
 lint:
 	go vet ./...
 	go vet -tags difftest ./...
+	go vet -tags pixeltest ./pixeltest/...
 	@if command -v staticcheck >/dev/null 2>&1; then \
 		echo "staticcheck ./..." && staticcheck ./... && \
 		echo "staticcheck -tags difftest ./..." && staticcheck -tags difftest ./... && \
