@@ -11,6 +11,7 @@ Ostrozhansky. Claude did the coding. It is both:
 - a **drop-in replacement** for the Python command-line tool: the same
   commands, flags, messages, and exit codes, and byte-identical output files,
   so a file rotated by either tool can be reversed by the other; and
+- Version 1.7.1+go.2 diverged from the original and implemented imir capabilities.
 - a **Go library**, whose functions mirror the Python source one to one,
   plus a file API and a streaming API that holds only the file's metadata in
   memory.
