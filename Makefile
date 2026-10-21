@@ -7,7 +7,7 @@ UPSTREAM_REPO   ?= https://github.com/olegoz/heic-lossless-rotate.git
 UPSTREAM_COMMIT := $(shell cat difftest/upstream.commit)
 UPSTREAM_DIR    ?= .upstream
 
-.PHONY: all build run test difftest upstream fmt lint clean
+.PHONY: all build run test difftest upstream fmt lint release-check snapshot clean
 
 all: fmt lint test build
 
@@ -53,6 +53,15 @@ lint:
 	else \
 		echo "staticcheck not installed; skipping (go install honnef.co/go/tools/cmd/staticcheck@latest)"; \
 	fi
+
+## release-check: check that TAG (e.g. make release-check TAG=v1.7.1) is the release tag for pkg/version
+release-check:
+	@test -n "$(TAG)" || { echo "usage: make release-check TAG=vX.Y.Z[+go.N]"; exit 2; }
+	RELEASE_TAG=$(TAG) go test -count=1 -run '^TestReleaseTag$$' ./pkg/version
+
+## snapshot: local goreleaser dry run (all platforms, nothing published); archives land in ./dist/
+snapshot:
+	goreleaser release --snapshot --clean
 
 ## clean: remove build outputs
 clean:

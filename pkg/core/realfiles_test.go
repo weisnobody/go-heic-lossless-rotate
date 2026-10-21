@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/tests"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/tests"
 )
 
 // Both directories are at the module root (gitignored, like upstream's).

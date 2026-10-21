@@ -1,0 +1,66 @@
+# Runs on the GitHub mirror (primary repo: arena.the42.net). See docs/DESIGN.md,
+# "Go port version and release tags".
+#
+# A v* tag: check the tag against pkg/version, run CI, then publish the
+# release with goreleaser. A manual run: CI, then a snapshot build uploaded as
+# a workflow artifact; nothing is published.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-tag:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Tag matches pkg/version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: go test -count=1 -run '^TestReleaseTag$' -v ./pkg/version
+
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  goreleaser:
+    needs: [check-tag, ci]
+    # check-tag is skipped on manual runs; any other outcome stops the release.
+    if: >-
+      !cancelled() && needs.ci.result == 'success' &&
+      (needs.check-tag.result == 'success' ||
+       (github.ref_type != 'tag' && needs.check-tag.result == 'skipped'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # goreleaser needs the tags and history for the changelog
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean ${{ github.ref_type != 'tag' && '--snapshot' || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v7
+        with:
+          name: snapshot
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt

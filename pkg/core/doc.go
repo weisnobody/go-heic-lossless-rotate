@@ -13,10 +13,10 @@
 // This package works on a whole file held in memory: []byte in, []byte
 // out. Two Go-only packages build on it:
 //
-//   - [github.com/pjg/go-heic-lossless-rotate/pkg/files] rotates, reverses,
+//   - [github.com/weisnobody/go-heic-lossless-rotate/pkg/files] rotates, reverses,
 //     and inspects files on disk exactly as the command-line tool does,
 //     including its safety checks and atomic writes. Start here for files.
-//   - [github.com/pjg/go-heic-lossless-rotate/pkg/stream] works over any
+//   - [github.com/weisnobody/go-heic-lossless-rotate/pkg/stream] works over any
 //     io.ReaderAt and holds only the file's metadata in memory. Use it for
 //     large inputs or data that isn't a local file.
 //

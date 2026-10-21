@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
-	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
-	"github.com/pjg/go-heic-lossless-rotate/pkg/core"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/pybytes"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 )
 
 func MustSynth(t testing.TB, mutate func(*synth.Options)) []byte {

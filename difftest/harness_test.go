@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/pkg/version"
+	"github.com/weisnobody/go-heic-lossless-rotate/pkg/version"
 )
 
 func TestUpstreamPinned(t *testing.T) {

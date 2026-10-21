@@ -4,8 +4,9 @@ name: ci
 on:
   push:
     branches: ["**"]
-    tags: ["v*"]
   pull_request:
+  # release.yml runs this before publishing a tag
+  workflow_call:
 
 permissions:
   contents: read
@@ -20,8 +21,8 @@ jobs:
         go: ["1.23", "stable"]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
       - name: go vet
@@ -41,21 +42,21 @@ jobs:
     name: difftest (vs pinned Python upstream)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Read upstream pin
         id: pin
         run: echo "commit=$(cat difftest/upstream.commit)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: olegoz/heic-lossless-rotate
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream
           # full history so `git rev-parse HEAD` resolves to the pinned SHA
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - name: make difftest

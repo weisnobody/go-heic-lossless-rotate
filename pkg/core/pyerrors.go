@@ -1,6 +1,6 @@
 package core
 
-import "github.com/pjg/go-heic-lossless-rotate/internal/pybytes"
+import "github.com/weisnobody/go-heic-lossless-rotate/internal/pybytes"
 
 // Python's IndexError / struct.error, which the CLI doesn't catch, so Python
 // prints a traceback; this port returns a *BoxParseError instead

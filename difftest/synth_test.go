@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
 )
 
 // synthCase is one build_synthetic_heic call, expressed both ways.

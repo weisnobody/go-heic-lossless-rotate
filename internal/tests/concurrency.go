@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pjg/go-heic-lossless-rotate/internal/synth"
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
 )
 
 // ConcurrentWorkers is how many goroutines the concurrency tests run at
