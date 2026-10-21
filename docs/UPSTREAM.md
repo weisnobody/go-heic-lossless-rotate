@@ -9,7 +9,7 @@ by Oleg Ostrozhansky (MIT). The Go port mirrors one pinned upstream release.
 |---|---|
 | Upstream version | **1.7.1** (`version.Version`) |
 | Upstream commit | see [`difftest/upstream.commit`](../difftest/upstream.commit), currently `70d6c73b5827aabf958c0649b3ac1c9e0dd33d05` (2026-10-08) |
-| Go port version | `version.GoVersion`, currently `1.7.1+go.1` |
+| Go port version | `version.GoVersion`, currently `1.7.1+go.2` |
 
 `difftest/upstream.commit` is the **single source of truth** for the pin.
 The Makefile (`make upstream`), CI, and the differential harness all read
@@ -43,11 +43,17 @@ For a Go-only fix release, bump `GoRevision` and nothing else (see
 
 | Upstream version | Upstream commit | Go version | Date | Notes |
 |---|---|---|---|---|
-| 1.7.1 | `70d6c73` | 1.7.1+go.1 | in progress | Initial port |
+| 1.7.1 | `70d6c73` | 1.7.1+go.1 | 2026-10-20 | Initial port |
+| 1.7.1 | `70d6c73` | 1.7.1+go.2 | in progress | Go-only: `mirror` (COMPAT E2), rotation of files with an `imir` (D8) |
 
 ## Python → Go Function Map
 
 Naming rules are in [DESIGN.md § Naming Rules](DESIGN.md#naming-rules-python--go).
+
+Go-only code has no entry here: `pkg/core/orient.go` and `pkg/core/mirror.go` (mirroring, COMPAT E2/D8), and the
+blocks in `core.go` marked `Go-only`. When porting an upstream change to `apply_rotation` or
+`_restore_meta_provenance_span`, port it into `applyEdit` / `restoreMetaProvenanceSpan` and keep those blocks; if
+upstream ever adds its own mirroring, its provenance tags will need reconciling with `OIMR` and format v3.
 
 ### Function map: `core.py` → `pkg/core/core.go`
 

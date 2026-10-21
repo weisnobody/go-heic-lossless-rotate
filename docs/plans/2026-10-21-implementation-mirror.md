@@ -1,7 +1,22 @@
 # Plan: Mirroring (`imir`) support
 
 - **Date:** 2026-10-21
-- **Status:** In progress
+- **Status:** Implemented 2026-10-21 on `feature/mirror`; `make test lint difftest pixeltest` green. Released as
+  `1.7.1+go.2`. Deviations from this plan:
+  - **v3 parsing:** `ParseProvenance` accepts a v3 record only if it carries `OIMR`. Any other v3 record still gets
+    Python's exact "newer than this script understands (max 2)" error, so the existing difftest "version 3" cases
+    keep matching.
+  - **Reverse order of `OIPF`:** `restoreImir` puts the pristine `ipma` flags back only when `irot` wasn't inserted
+    too (`OIRT` is 1 byte); otherwise the `irot` step does it, because the inserted `irot` may still need the wide
+    flag. It also keeps `meta`'s size field consistent, since it re-locates boxes before `OMSZ` is restored.
+  - **Extra `iprp` children:** upstream's SLOW PATH rebuilds `iprp` from `ipco`+`ipma` only, so a crafted extra child
+    is dropped and the edit isn't reversible. Mirroring inherits this; the CLI's self-check refuses such files, as it
+    does for rotate.
+  - **Apple decoder:** `sips -s format png` writes stored pixels without applying `irot`/`imir`, so the pixel test
+    decodes with ImageIO through a small Swift helper (`pixeltest/imageio.swift`, built with `swiftc`).
+    `heif-dec` and ImageIO both agree with every edit; swapping the axis values fails 24 checks.
+  - **`info` on a file's own `imir`:** reports the whole orientation even without a provenance record (D8).
+  - The CLI's argparse clone keeps the axis as a validated string; `run` maps it to `core.MirrorAxis`.
 - **Covers:** a Go-only feature beyond upstream: the `mirror` subcommand (E2), plus fixing how `rotate`
   treats files with an `imir` (D8). SPEC.md previously listed mirroring as excluded; this plan changes that.
 - **Upstream pin:** heic-lossless-rotate v1.7.1, commit `70d6c73` (unchanged)

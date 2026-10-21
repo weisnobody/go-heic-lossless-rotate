@@ -48,6 +48,9 @@ Why in Go?  Was building a tool (in Go) to be able to fix rotation on images and
 
 - **Rotates HEIC/HEIF photos losslessly.** The image data is never touched or
   recompressed; only the rotation tag inside the file changes.
+- **Mirrors them too (Go only).** `mirror horizontal` or `mirror vertical`
+  flips a photo through the HEIF `imir` property, just as losslessly and
+  reversibly.
 - **Is fully reversible.** `reverse` restores a file to be byte-for-byte
   identical to the original, even after several rotations.
 - **Checks itself before writing.** `rotate` reverses its own output in
@@ -103,6 +106,7 @@ make build      # ./bin/heic-rotate and ./bin/heic-lossless-rotate
 
 ```
 heic-rotate rotate <0|90|180|270> <input.heic> [output.heic] [-f]
+heic-rotate mirror <horizontal|vertical> <input.heic> [output.heic] [-f]
 heic-rotate reverse <input.heic> [output.heic] [-f] [--ignore-tamper-check]
 heic-rotate info <input.heic>
 heic-rotate -V | --version
@@ -125,15 +129,27 @@ heic-rotate rotate 90 photo.heic photo_rotated.heic
 **Default output names.** Without an output path, `rotate` writes to
 `<input>_rotated.heic`, unless the input name already ends in `_restored`
 (it looks like `reverse`'s output), in which case that suffix is stripped
-instead (`photo_restored.heic` → `photo.heic`). `reverse` writes to
-`<input>_restored.heic`. Both refuse to overwrite an existing file unless you
-pass `-f`/`--force`.
+instead (`photo_restored.heic` → `photo.heic`). `mirror` does the same with
+`<input>_mirrored.heic`. `reverse` writes to `<input>_restored.heic`. All of
+them refuse to overwrite an existing file unless you pass `-f`/`--force`.
 
 **Rotation direction.** Positive angles rotate **counter-clockwise**:
 `rotate 90` turns the image 90° counter-clockwise, and `rotate 270` turns it
 90° clockwise. Rotation is **added** to whatever the file already has, rather
 than setting an absolute angle: rotating 90° twice lands at 180°, the way
 you'd turn a printed photo in your hands.
+
+**Mirroring (Go only).** `mirror horizontal` flips the image left-right, and
+`mirror vertical` flips it upside down, as it currently displays. Flipping
+twice the same way gets you back where you started, and rotating a flipped
+photo still turns it counter-clockwise on screen. `reverse` undoes flips
+along with rotations. Two things to know:
+
+- The Python tool can't reverse (or rotate) a file once it has been
+  mirrored; it refuses with an error rather than damaging it. Use this tool,
+  or `reverse` here first.
+- If a photo already has its own `imir` (mirroring) property from another
+  tool, it can be rotated but not flipped.
 
 Run with no arguments, or with `-h`, for full help; each subcommand also takes
 `-h` (`heic-rotate rotate -h`).
@@ -149,6 +165,10 @@ heic-rotate 90 IMG_0001.heic IMG_0001_rotated.heic
 
 # Rotate 90° clockwise instead (270° counter-clockwise == 90° clockwise)
 heic-rotate 270 IMG_0001.heic IMG_0001_rotated.heic
+
+# Flip left-right (a mirror image), then undo it
+heic-rotate mirror horizontal IMG_0001.heic IMG_0001_mirrored.heic
+heic-rotate reverse IMG_0001_mirrored.heic IMG_0001_original.heic
 
 # Preview what would happen without writing anything
 heic-rotate --dry-run 180 IMG_0001.heic
@@ -187,9 +207,9 @@ place.
 | `-V`, `--version` | top level | Show the upstream version implemented, the current metadata format version, and the format versions `reverse` supports, then exit |
 | `-G`, `--goversion` | top level | Show the Go port's own version, the upstream version it implements, and the Go toolchain it was built with, then exit (Go only) |
 | `-q`, `--quiet` | all | Suppress informational messages on stdout (errors still go to stderr) |
-| `--dry-run` | `rotate`, `reverse` | Do everything except write the output file |
-| `-f`, `--force` | `rotate`, `reverse` | Overwrite the output file if it already exists |
-| `--no-exif-sync` | `rotate` | Don't sync the legacy embedded Exif `Orientation` tag |
+| `--dry-run` | `rotate`, `mirror`, `reverse` | Do everything except write the output file |
+| `-f`, `--force` | `rotate`, `mirror`, `reverse` | Overwrite the output file if it already exists |
+| `--no-exif-sync` | `rotate`, `mirror` | Don't sync the legacy embedded Exif `Orientation` tag |
 | `--ignore-tamper-check` | `reverse` | Reverse even if the file seems to have been modified by something else since this tool last edited it |
 
 `-q`, `--dry-run`, and `-f` may be given either before or after the
@@ -205,7 +225,7 @@ checksum and refuses to write a wrong result.
 
 ## Exit codes
 
-`rotate` and `reverse` exit `0` on success. `info` reports its result in the
+`rotate`, `mirror`, and `reverse` exit `0` on success. `info` reports its result in the
 exit code, so a script can branch without parsing text:
 
 | Exit code | Meaning |
@@ -213,6 +233,7 @@ exit code, so a script can branch without parsing text:
 | `0` | No provenance record: this tool has never touched the file |
 | `1` / `2` / `3` | This tool has added `90°` / `180°` / `270°` in total |
 | `4` | The file has a provenance record, but this tool's net rotation is `0°` (for example after `rotate 0`, or rotations that cancel out) |
+| `5` | What this tool added includes a flip (Go only; `info` prints the rotation part) |
 | `10` | An error: an unreadable or malformed file, a refused overwrite, a failed check |
 
 Bad arguments are a usage error, which exits `2` for every command, as with
@@ -235,6 +256,12 @@ phones leave it out when no rotation is needed. This tool handles both cases:
 It also keeps a legacy embedded Exif `Orientation` tag, if there is one, in
 sync, since some readers fall back to it.
 
+Mirroring (Go only) works the same way through the `imir` property: the
+first flip inserts one, and flipping back removes it again. Decoders apply
+`irot` and `imir` in the order they're listed for the image, so this tool
+works out the whole displayed orientation from both, the way libheif does,
+and checks its edits against libheif and Apple's decoder.
+
 The first edit stores a small **provenance record** in a private top-level
 `uuid` box, which compliant readers skip. It holds the file's pristine state
 and CRC32 checksums. Later edits update only the live rotation, so `reverse`
@@ -254,6 +281,8 @@ risking a wrong edit:
   of file"), is refused. Both are legal, but real encoders don't use them for
   a box as small as `meta`.
 - More than one `ipma` or `ipco` box inside a single `iprp` is refused.
+- `mirror` refuses a photo that already has its own `imir` property, since
+  flipping it would mean removing a property this tool didn't add.
 - The Exif `Orientation` sync only handles an Exif item stored at an absolute
   file offset. If it's stored any other way, the sync is skipped: safe, just
   incomplete.
@@ -278,6 +307,12 @@ each one with examples.
 - **Default output names** strip the extension from the file name only, so a
   dot in a directory name doesn't count as one.
 - **`-G`/`--goversion`** is new.
+- **`mirror`** is new, and `info` exits `5` for a flip. Files that were never
+  mirrored are still byte-identical to Python's; a mirrored file's
+  provenance record is a newer format that the Python tool declines to touch.
+- **Rotating a photo that has its own `imir`** turns it counter-clockwise on
+  screen as documented. Python adds to `irot` without regard to the flip,
+  which can turn it the wrong way.
 - **Arguments** are parsed the way Python 3.14's `argparse` parses them.
   Older Pythons reject a few unusual orderings that 3.14 accepts.
 - **File-error messages** match Python's for the common errors (missing file,

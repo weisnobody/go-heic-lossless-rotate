@@ -97,6 +97,17 @@ about 2.3% of cases are D2.
 | **Ordering** | As with D5, only after the point where Python's own parse would succeed. |
 | **Implemented in** | Phase 2 |
 
+## D8: Rotating a file that has an `imir`
+
+| | |
+|---|---|
+| **ID** | `D8` |
+| **Python** | `rotate` treats `irot` alone as the orientation: it writes `(irot + delta) % 4`, and syncs Exif Orientation from `irot` only. Decoders apply every associated `irot` and `imir` in `ipma` order, so when the primary item's `imir` follows its `irot`, adding `delta` turns the displayed image **clockwise**, and the Exif value written is the unflipped one. |
+| **Go** | Composes the displayed orientation from every associated `irot`/`imir`, in order (libheif's `heif_orientation_concat`), then writes the `irot` value that turns the display `delta` quarter turns counter-clockwise. The Exif sync writes the whole orientation, `2`, `4`, `5`, and `7` included. |
+| **Example** | `irot=0` then `imir` (left-right), `rotate 90`: Python writes `irot=1` (the display turns clockwise); Go writes `irot=3`. |
+| **Same as Python** | Every file without an `imir` on its primary item. An inserted `irot` (SLOW PATH) lands after the `imir`, where `+delta` is already right, so those bytes match Python's; only the Exif value differs. `info` likewise reports the whole orientation when an `imir` is involved. |
+| **Implemented in** | Mirroring (2026-10-21) |
+
 ## OSError message text (best effort)
 
 | | |
@@ -122,6 +133,21 @@ about 2.3% of cases are D2.
 | **Unaffected** | `-V`, the TVER provenance entry, and `info` still report only the upstream version (`1.7.1`). |
 | **Implemented in** | Phase 3 |
 
+## E2: Mirroring
+
+| | |
+|---|---|
+| **ID** | `E2` |
+| **Python** | No `mirror` command; `imir` is never written. |
+| **Go** | `mirror {horizontal,vertical} <input> [output]` (and `core.ApplyMirror`, `stream.ApplyMirrorReaderAt`, `files.MirrorFile`) flips the image as it currently displays: `horizontal` left-right, `vertical` upside down. It takes `rotate`'s flags, runs the same structure check and reversibility self-check, and its default output is `<input>_mirrored.heic` (`_restored` is stripped as for `rotate`). |
+| **`imir` semantics** | Bit 0 set flips left-right, clear flips top-bottom: libheif's reading (`Box_imir::parse`, `mirror_inplace`). The 2017 edition of ISO/IEC 23008-12 words the axis the other way round, so `make pixeltest` checks every edit against libheif's `heif-dec` and Apple ImageIO, which both agree with this. |
+| **Edits** | The first flip appends an `imir` (and, if the primary item has no `irot`, an explicit `irot=0` just before it, so the `imir` stays the last property and later rotations patch `irot` in place). A second flip removes that `imir` again and adjusts `irot` to keep the displayed rotation. A file's own `imir` is never changed, so flipping a file that already has one is refused with `error: the primary item already has its own 'imir' …`; rotating it still works (D8). |
+| **Provenance** | A new entry, `OIMR` (empty), marks that this tool inserted an `imir`; `OIPF` is recorded at that point if it isn't already. A record with `OIMR` is written as **format v3** (`core.MirrorFormatVersion`); every other record is still v2, byte for byte Python's. Go accepts v3 only with `OIMR`: any other v3 record gets Python's `format version 3 is newer…` error, as before. `reverse` removes the inserted `imir` (if still there) before undoing the `irot` edit. `-V` and `SupportedReverseFormatVersions` are unchanged. |
+| **Python on a mirrored file** | `rotate` and `reverse` refuse it (`provenance box format version 3 is newer than this script understands (max 2)`) and write nothing; `info` shows the record with its `NEWER` note. Cross-reversibility (C2) therefore holds for every file that was never mirrored. |
+| **`info`** | When an `imir` is involved, the text reports the whole orientation (`has added: 90 deg + horizontal flip`) and exits `5` if the net change includes a flip. `Info` gains `CurrentOrientation`, `OriginalOrientation`, and `DeltaOrientation` (Exif numbering), set only then. |
+| **TVER** | Still `1.7.1` (C3), although 1.7.1 itself can't write a v3 record. |
+| **Implemented in** | Mirroring (2026-10-21) |
+
 ---
 
 ## PYARGS: argparse version
@@ -144,3 +170,4 @@ These may look like differences, but they're covered by the contract:
   (SPEC C6). Exit codes for them match: `-h` exits 0 and usage errors exit 2.
 - **Files rotated by Go are indistinguishable from files rotated by Python.**
   TVER records `1.7.1` either way (SPEC C3). Use `-G` to identify a Go build.
+  A mirrored file is the exception: its v3 record shows it (E2).
