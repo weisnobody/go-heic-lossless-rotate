@@ -1,7 +1,13 @@
 # Plan: Phase 6 - Release
 
 - **Date:** 2026-10-20
-- **Status:** In progress. Commit 1 (module path rename) is done.
+- **Status:** Execution steps 1-2 done 2026-10-20 (branch commits, local dry run). Steps 3-5 wait on the
+  merge to main and on user-triggered mirror syncs. Deviations from this plan:
+  - `ci.yml`'s actions moved to their current majors (v7). v4/v5 ran on Node 20.
+  - The `+go.N` install path was checked end to end against a local clone (`GOPROXY=direct`, git
+    `insteadOf`). `@v1.7.1+go.2` installs as the pseudo-version `v1.7.2-0.<time>-<hash>`, not
+    `v1.7.1-0.…`; the README says so.
+  - The pre-release status note was removed from the README, so release archives don't carry it.
 - **Covers:** [PLAN.md](../PLAN.md) Phase 6 (Release): the items not already done on 2026-10-19
 - **Upstream pin:** heic-lossless-rotate v1.7.1, commit `70d6c73`
 - **Branch:** `feat/phase-6-release` (from `dev`)

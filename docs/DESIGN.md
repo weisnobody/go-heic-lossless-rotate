@@ -235,8 +235,17 @@ differences that make a helper mandatory:
   show up in `go list -m -versions` or `@latest`.
   - `go install …@latest` resolves to the plain `vX.Y.Z` tag, i.e. the `+go.1` build.
   - Go-only fixes reach `go install` users only through
-    `@vX.Y.Z+go.N` (resolved to a pseudo-version) or `@<commit>`.
-  - GitHub release binaries (goreleaser) carry every `+go.N`.
+    `@vX.Y.Z+go.N` (resolved to a pseudo-version) or `@<commit>`. Checked end to end on
+    2026-10-20 against a local clone: `@v1.7.1+go.2` installs the tagged commit as
+    `v1.7.2-0.<time>-<hash>`, while `@latest` and `-versions` see only `v1.7.1`.
+  - GitHub release binaries (goreleaser) carry every `+go.N`. Archive names replace `+`
+    with `-` (`go-heic-lossless-rotate_1.7.1-go.2_linux_amd64.tar.gz`), because GitHub
+    renames release assets with special characters and `checksums.txt` would no longer
+    match them.
+  - **Pipeline:** `.github/workflows/release.yml` runs on `v*` tags: `TestReleaseTag`
+    (the tag check, `make release-check TAG=…` locally), then the whole of `ci.yml`, then
+    goreleaser (`.goreleaser.yaml`). A manual run builds a snapshot artifact without
+    publishing. `make snapshot` is the local dry run.
   - We accept this: Go-only fixes should be rare, and the README documents the
     explicit `@vX.Y.Z+go.N` form.
 - **Trade-offs:** `go install @latest` can lag behind Go-only fixes until

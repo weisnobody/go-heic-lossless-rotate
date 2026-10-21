@@ -134,20 +134,23 @@ measured against the real upstream tool from day one.
 ### Phase 6: Release
 - [ ] Verify the mirror delivers tags: push a throwaway tag to arena, confirm it appears
       on GitHub and triggers the workflow, then delete it from both
-- [ ] `.goreleaser.yaml`: two builds × {darwin, linux, windows} × {amd64, arm64},
-      `CGO_ENABLED=0`, checksums, archives. Confirm goreleaser accepts a
-      `+go.N` tag (do a dry run with `--snapshot` against a local `v1.7.1+go.2` tag).
-- [ ] Release workflow: tag-vs-`GoVersion` consistency check (DESIGN.md § Go port
-      version and release tags)
+- [x] `.goreleaser.yaml`: two builds × {darwin, linux, windows} × {amd64, arm64},
+      `CGO_ENABLED=0`, checksums, archives. goreleaser 2.18 accepts a `+go.N` tag
+      (local `release --skip=publish` against a `v1.7.1+go.2` tag) (2026-10-20)
+- [x] Release workflow: tag-vs-`GoVersion` consistency check (DESIGN.md § Go port
+      version and release tags); `release.yml` + `TestReleaseTag` (2026-10-20)
+- [x] Module path `github.com/weisnobody/go-heic-lossless-rotate`, matching the
+      GitHub mirror (2026-10-20)
 - [x] README: self-contained CLI reference (usage, examples, options, exit codes,
       limitations), differences from the Python tool, and a short library tour
       pointing to the package docs (2026-10-19)
-- [ ] README: install (`go install`, release download, `go get` for the library)
+- [x] README: install (`go install`, release download, `go get` for the library) (2026-10-20)
 - [x] Package docs (`doc.go` guides) with `Example*` tests for `ApplyRotation`,
       `RotateFile`, and the streaming API, and a concurrency test per package
       confirming the documented concurrency guarantees (2026-10-19)
-- [ ] README: document `-G`, the `+go.N` scheme, and that Go-only fixes need
+- [x] README: document `-G`, the `+go.N` scheme, and that Go-only fixes need
       `go install …@vX.Y.Z+go.N`, because `@latest` ignores metadata tags
+      (verified against a local clone) (2026-10-20)
 - [ ] Tag `v1.7.1` on arena (= GoVersion `1.7.1+go.1`) and confirm the GitHub
       release and `go install …@latest` work
 
