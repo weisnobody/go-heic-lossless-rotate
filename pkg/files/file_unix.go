@@ -9,7 +9,7 @@ import (
 )
 
 // linkCount is the target's hard-link count.
-func linkCount(fi fs.FileInfo) uint64 {
+func linkCount(_ string, fi fs.FileInfo) uint64 {
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
 		return uint64(st.Nlink)
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/weisnobody/go-heic-lossless-rotate/internal/pyfmt"
 	"github.com/weisnobody/go-heic-lossless-rotate/internal/synth"
 	"github.com/weisnobody/go-heic-lossless-rotate/pkg/core"
 	"github.com/weisnobody/go-heic-lossless-rotate/pkg/version"
@@ -369,7 +370,8 @@ func TestErrorMessages(t *testing.T) {
 	tmpdir := t.TempDir()
 	missing := filepath.Join(tmpdir, "missing.heic")
 	rc, out, stderr := runCLI("info", missing)
-	want := "error: [Errno 2] No such file or directory: '" + missing + "'\n"
+	// Python's repr: on Windows each backslash in the path is doubled.
+	want := "error: [Errno 2] No such file or directory: " + pyfmt.StrRepr(missing) + "\n"
 	if rc != core.ErrorExitCode || out != "" || stderr != want {
 		t.Errorf("missing input: rc %d, stdout %q, stderr %q; want %q", rc, out, stderr, want)
 	}

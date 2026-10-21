@@ -309,7 +309,7 @@ func writeOutput(path string, out *stream.View, in *input) error {
 			return asOpenError(err, path)
 		}
 		f.Close()
-		if linkCount(existing) > 1 { // keep the other hard links: write in place
+		if linkCount(target, existing) > 1 { // keep the other hard links: write in place
 			if in.info != nil && os.SameFile(existing, in.info) {
 				// Overwriting the very file out reads from: materialize first.
 				data, err := out.Bytes()
