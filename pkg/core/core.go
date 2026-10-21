@@ -1342,6 +1342,142 @@ type spliceOp struct {
 	repl       []byte
 }
 
+// iprpWithAppended builds the replacement 'iprp' box for the SLOW PATH:
+// boxes appended to 'ipco' as new properties, and an essential association
+// to each appended to the primary item's 'ipma' entry, setting the
+// 15-bit-index ("wide") flag bit if the new indexes need it. Returns the box
+// and the first new property's 1-based index. (Go-only factoring, shared
+// with ApplyMirror's insertion; apply_rotation inlines it.)
+func iprpWithAppended(data []byte, ipcoHdr, ipmaHdr BoxHeader, ipcoChildren []BoxHeader,
+	ipmaVersion uint8, ipmaFlags uint32, ipmaEntries []IpmaEntry, primaryItemID uint32,
+	boxes ...[]byte) ([]byte, int, error) {
+	newIpcoContent := pybytes.SliceCopy(data, ipcoHdr.ContentStart, ipcoHdr.ContentEnd)
+	for _, b := range boxes {
+		newIpcoContent = append(newIpcoContent, b...)
+	}
+	newIpcoBox := makeBox("ipco", newIpcoContent)
+	newPropertyIndex := len(ipcoChildren) + 1
+
+	newFlags := ipmaFlags
+	if newPropertyIndex+len(boxes)-1 > 0x7f { // wide_needed
+		newFlags |= 1
+	}
+
+	newEntries := make([]IpmaEntry, len(ipmaEntries))
+	for i, e := range ipmaEntries {
+		assocs := append([]IpmaAssoc(nil), e.Assocs...)
+		if e.ItemID == primaryItemID {
+			for j := range boxes {
+				assocs = append(assocs, IpmaAssoc{PropIndex: newPropertyIndex + j, Essential: true})
+			}
+		}
+		newEntries[i] = IpmaEntry{ItemID: e.ItemID, Assocs: assocs}
+	}
+	newIpmaBox, err := BuildIpma(ipmaVersion, newFlags, newEntries)
+	if err != nil {
+		return nil, 0, err
+	}
+	return joinIprp(ipcoHdr, ipmaHdr, newIpcoBox, newIpmaBox), newPropertyIndex, nil
+}
+
+// joinIprp builds an 'iprp' box from new 'ipco' and 'ipma' boxes, in the
+// order the originals had.
+func joinIprp(ipcoHdr, ipmaHdr BoxHeader, newIpcoBox, newIpmaBox []byte) []byte {
+	var newIprpContent []byte
+	if ipcoHdr.Start < ipmaHdr.Start { // first_is_ipco
+		newIprpContent = append(newIpcoBox, newIpmaBox...)
+	} else {
+		newIprpContent = append(newIpmaBox, newIpcoBox...)
+	}
+	return makeBox("iprp", newIprpContent)
+}
+
+// iprpWithoutLast builds a replacement 'iprp' box with 'ipco''s last child
+// (lastChild) and the primary item's last association removed, and 'ipma''s
+// flags set to the value flags returns - called only after the associations
+// are rebuilt, the order _restore_meta_provenance_span reports errors in.
+// (Go-only factoring, shared by reverse's SLOW PATH and the mirror code.)
+func iprpWithoutLast(data []byte, ipcoHdr, ipmaHdr BoxHeader, ipmaVersion uint8, ipmaEntries []IpmaEntry,
+	primaryItemID uint32, lastChild BoxHeader, flags func() (uint32, error)) ([]byte, error) {
+	newEntries := make([]IpmaEntry, len(ipmaEntries))
+	for i, e := range ipmaEntries {
+		assocs := append([]IpmaAssoc(nil), e.Assocs...)
+		if e.ItemID == primaryItemID {
+			if len(assocs) == 0 { // Python: pop from empty list (COMPAT D2)
+				return nil, boxParseErrorf("ipma has an entry for primary item %d with no associations to remove", e.ItemID)
+			}
+			assocs = assocs[:len(assocs)-1] // drop the association we appended
+		}
+		newEntries[i] = IpmaEntry{ItemID: e.ItemID, Assocs: assocs}
+	}
+	originalFlags, err := flags()
+	if err != nil {
+		return nil, err
+	}
+	newIpmaBox, err := BuildIpma(ipmaVersion, originalFlags, newEntries)
+	if err != nil {
+		return nil, err
+	}
+	newIpcoBox := makeBox("ipco", pybytes.SliceCopy(data, ipcoHdr.ContentStart, lastChild.Start))
+	return joinIprp(ipcoHdr, ipmaHdr, newIpcoBox, newIpmaBox), nil
+}
+
+// spliceIprp replaces the 'iprp' box s.IprpHdr with newIprpBox in a copy of
+// data, rewriting 'meta''s size field and shifting any 'iloc' absolute
+// offsets past 'iprp' by the size change. Returns the new buffer and the
+// size change. tag is the log line's prefix. (Go-only factoring of
+// apply_rotation's SLOW PATH container bookkeeping, shared with ApplyMirror,
+// where the change can also be a shrink.)
+func spliceIprp(env FileEnv, data []byte, s *Structures, newIprpBox []byte, tag string, log logger) ([]byte, int, error) {
+	metaStart, iprpHdr, ilocHdr := s.MetaHdr.Start, s.IprpHdr, s.IlocHdr
+	delta := len(newIprpBox) - (iprpHdr.ContentEnd - iprpHdr.Start)
+
+	var ops []spliceOp
+	newIlocContent, anyChanged, err := PatchIlocOffsetsAtThreshold(data, ilocHdr, env.Base()+iprpHdr.Start, delta)
+	if err != nil {
+		return nil, 0, err
+	}
+	var ilocPatchOp *spliceOp
+	if anyChanged {
+		ilocPatchOp = &spliceOp{ilocHdr.ContentStart, ilocHdr.ContentEnd, newIlocContent}
+		log.printf("[%s] patched absolute offsets in 'iloc' "+
+			"(metadata precedes media data in this file's layout)", tag)
+	}
+
+	// We patch meta's size by overwriting its leading 4-byte field in
+	// place - this only works if 'meta' uses a standard 32-bit box
+	// header. The standard also permits a 64-bit "largesize" header or
+	// a size-extends-to-EOF header for ANY box; supporting that would
+	// mean growing/shrinking an 8-byte field instead of overwriting a
+	// 4-byte one in place, which none of the insertion math here
+	// accounts for. So we refuse, before any bytes have been touched.
+	metaSizeField, err := unpackU32(data, metaStart)
+	if err != nil {
+		return nil, 0, err
+	}
+	if metaSizeField == 0 || metaSizeField == 1 {
+		return nil, 0, boxParseErrorf("meta box uses 64-bit/extends-to-EOF size field; " +
+			"this script only handles standard 32-bit headers")
+	}
+	newMetaSize := int64(metaSizeField) + int64(delta)
+	if newMetaSize < 0 || newMetaSize > math.MaxUint32 { // Python: struct.error (COMPAT D2)
+		return nil, 0, boxParseErrorf("new meta box size %d doesn't fit in its 32-bit size field", newMetaSize)
+	}
+	ops = append(ops,
+		spliceOp{metaStart, metaStart + 4, binary.BigEndian.AppendUint32(nil, uint32(newMetaSize))},
+		spliceOp{iprpHdr.Start, iprpHdr.ContentEnd, newIprpBox})
+	if ilocPatchOp != nil {
+		ops = append(ops, *ilocPatchOp)
+	}
+	sort.SliceStable(ops, func(i, j int) bool { return ops[i].start > ops[j].start })
+
+	out := workingCopy(data)
+	for _, op := range ops {
+		out = pybytes.Splice(out, op.start, op.end, op.repl)
+	}
+	return out, delta, nil
+}
+
 // ApplyRotation rotates the image by deltaTurns quarter-turns
 // COUNTER-CLOCKWISE ON TOP OF whatever rotation is already recorded (0 if
 // none) - NOT to an absolute angle - and returns the edited file
@@ -1497,80 +1633,15 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 		}
 
 		newIrotBox := makeBox("irot", []byte{byte(newTurns)})
-		newIpcoContent := append(pybytes.SliceCopy(data, ipcoHdr.ContentStart, ipcoHdr.ContentEnd), newIrotBox...)
-		newIpcoBox := makeBox("ipco", newIpcoContent)
-		newPropertyIndex := len(ipcoChildren) + 1
-
-		newFlags := ipmaFlags
-		if newPropertyIndex > 0x7f { // wide_needed
-			newFlags |= 1
-		}
-
-		newEntries := make([]IpmaEntry, len(ipmaEntries))
-		for i, e := range ipmaEntries {
-			assocs := append([]IpmaAssoc(nil), e.Assocs...)
-			if e.ItemID == primaryItemID {
-				assocs = append(assocs, IpmaAssoc{PropIndex: newPropertyIndex, Essential: true})
-			}
-			newEntries[i] = IpmaEntry{ItemID: e.ItemID, Assocs: assocs}
-		}
-		newIpmaBox, err := BuildIpma(ipmaVersion, newFlags, newEntries)
+		newIprpBox, newPropertyIndex, err := iprpWithAppended(data, ipcoHdr, ipmaHdr, ipcoChildren,
+			ipmaVersion, ipmaFlags, ipmaEntries, primaryItemID, newIrotBox)
 		if err != nil {
 			return nil, err
 		}
 
-		var newIprpContent []byte
-		if ipcoHdr.Start < ipmaHdr.Start { // first_is_ipco
-			newIprpContent = append(newIpcoBox, newIpmaBox...)
-		} else {
-			newIprpContent = append(newIpmaBox, newIpcoBox...)
-		}
-		newIprpBox := makeBox("iprp", newIprpContent)
-
-		delta := len(newIprpBox) - (iprpHdr.ContentEnd - iprpHdr.Start)
-
-		var ops []spliceOp
-		newIlocContent, anyChanged, err := PatchIlocOffsetsAtThreshold(data, ilocHdr, env.Base()+iprpHdr.Start, delta)
-		if err != nil {
+		var delta int
+		if out, delta, err = spliceIprp(env, data, structInfo, newIprpBox, "slow path", log); err != nil {
 			return nil, err
-		}
-		var ilocPatchOp *spliceOp
-		if anyChanged {
-			ilocPatchOp = &spliceOp{ilocHdr.ContentStart, ilocHdr.ContentEnd, newIlocContent}
-			log.printf("[slow path] patched absolute offsets in 'iloc' " +
-				"(metadata precedes media data in this file's layout)")
-		}
-
-		// We patch meta's size by overwriting its leading 4-byte field in
-		// place - this only works if 'meta' uses a standard 32-bit box
-		// header. The standard also permits a 64-bit "largesize" header or
-		// a size-extends-to-EOF header for ANY box; supporting that would
-		// mean growing/shrinking an 8-byte field instead of overwriting a
-		// 4-byte one in place, which none of the insertion math here
-		// accounts for. So we refuse, before any bytes have been touched.
-		metaSizeField, err := unpackU32(data, metaStart)
-		if err != nil {
-			return nil, err
-		}
-		if metaSizeField == 0 || metaSizeField == 1 {
-			return nil, boxParseErrorf("meta box uses 64-bit/extends-to-EOF size field; " +
-				"this script only handles standard 32-bit headers")
-		}
-		newMetaSize := int64(metaSizeField) + int64(delta)
-		if newMetaSize < 0 || newMetaSize > math.MaxUint32 { // Python: struct.error (COMPAT D2)
-			return nil, boxParseErrorf("new meta box size %d doesn't fit in its 32-bit size field", newMetaSize)
-		}
-		ops = append(ops,
-			spliceOp{metaStart, metaStart + 4, binary.BigEndian.AppendUint32(nil, uint32(newMetaSize))},
-			spliceOp{iprpHdr.Start, iprpHdr.ContentEnd, newIprpBox})
-		if ilocPatchOp != nil {
-			ops = append(ops, *ilocPatchOp)
-		}
-		sort.SliceStable(ops, func(i, j int) bool { return ops[i].start > ops[j].start })
-
-		out = workingCopy(data)
-		for _, op := range ops {
-			out = pybytes.Splice(out, op.start, op.end, op.repl)
 		}
 
 		log.printf("[slow path] inserted new 'irot' property (index "+
@@ -1799,6 +1870,19 @@ func entryU32(entries ProvenanceEntries, tag string) (uint32, error) {
 	return binary.BigEndian.Uint32(v), nil
 }
 
+// entryOipf mirrors struct.unpack('>I', b'\x00' + entries['OIPF'])[0]: the
+// pristine 'ipma' flags (COMPAT D2 for a missing or wrong-length entry).
+func entryOipf(entries ProvenanceEntries) (uint32, error) {
+	oipf, err := requireEntry(entries, "OIPF")
+	if err != nil {
+		return 0, err
+	}
+	if len(oipf) != 3 { // Python: struct.error (COMPAT D2)
+		return 0, provenanceErrorf("provenance entry 'OIPF' is %d bytes, expected 3", len(oipf))
+	}
+	return uint32(oipf[0])<<16 | uint32(oipf[1])<<8 | uint32(oipf[2]), nil
+}
+
 // restoreMetaProvenanceSpan restores 'meta' to its pristine pre-rotation
 // state (iprp/ipma, meta's own size field, iloc content) and removes the
 // provenance box, given span = data[meta_start:prov_end] - a standalone
@@ -1888,38 +1972,11 @@ func restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logge
 					"property, but it doesn't - cannot safely reverse")
 			}
 
-			newEntries := make([]IpmaEntry, len(ipmaEntries))
-			for i, e := range ipmaEntries {
-				assocs := append([]IpmaAssoc(nil), e.Assocs...)
-				if e.ItemID == primaryItemID {
-					if len(assocs) == 0 { // Python: pop from empty list (COMPAT D2)
-						return nil, boxParseErrorf("ipma has an entry for primary item %d with no associations to remove", e.ItemID)
-					}
-					assocs = assocs[:len(assocs)-1] // drop the association we appended
-				}
-				newEntries[i] = IpmaEntry{ItemID: e.ItemID, Assocs: assocs}
-			}
-			oipf, err := requireEntry(entries, "OIPF")
+			newIprpBox, err := iprpWithoutLast(span, ipcoHdr, ipmaHdr, ipmaVersion, ipmaEntries,
+				primaryItemID, lastChild, func() (uint32, error) { return entryOipf(entries) })
 			if err != nil {
 				return nil, err
 			}
-			if len(oipf) != 3 { // Python: struct.error (COMPAT D2)
-				return nil, provenanceErrorf("provenance entry 'OIPF' is %d bytes, expected 3", len(oipf))
-			}
-			originalFlags := uint32(oipf[0])<<16 | uint32(oipf[1])<<8 | uint32(oipf[2])
-			newIpmaBox, err := BuildIpma(ipmaVersion, originalFlags, newEntries)
-			if err != nil {
-				return nil, err
-			}
-
-			newIpcoBox := makeBox("ipco", pybytes.SliceCopy(span, ipcoHdr.ContentStart, lastChild.Start))
-			var newIprpContent []byte
-			if ipcoHdr.Start < ipmaHdr.Start { // first_is_ipco
-				newIprpContent = append(newIpcoBox, newIpmaBox...)
-			} else {
-				newIprpContent = append(newIpmaBox, newIpcoBox...)
-			}
-			newIprpBox := makeBox("iprp", newIprpContent)
 			span = pybytes.Splice(span, iprpStart, iprpCEnd, newIprpBox)
 			log.printf("[reverse] removed inserted 'irot' property and "+
 				"its 'ipma' association, restored original 'ipma' "+
