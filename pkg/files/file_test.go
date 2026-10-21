@@ -379,9 +379,6 @@ func TestWriteHardLinkedOutputInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runtime.GOOS == "windows" { // no link-count detection: atomic replace
-		return
-	}
 	if !bytes.Equal(mustRead(t, other), want) {
 		t.Error("the other hard link doesn't see the new content (link was broken)")
 	}
