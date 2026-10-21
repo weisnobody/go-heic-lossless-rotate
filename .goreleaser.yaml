@@ -1,0 +1,56 @@
+# Release builds, run by .github/workflows/release.yml on the GitHub mirror
+# (make snapshot for a local dry run). See docs/DESIGN.md, "Go port version
+# and release tags".
+version: 2
+
+project_name: go-heic-lossless-rotate
+
+builds:
+  - &build
+    id: heic-rotate
+    main: ./cmd/heic-rotate
+    binary: heic-rotate
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    # Rebuilding the same commit gives the same binaries.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  - <<: *build
+    id: heic-lossless-rotate
+    main: ./cmd/heic-lossless-rotate
+    binary: heic-lossless-rotate
+
+archives:
+  - ids: [heic-rotate, heic-lossless-rotate]
+    # No "+" in file names: GitHub renames release assets with special
+    # characters, and checksums.txt would no longer match them.
+    name_template: >-
+      {{ .ProjectName }}_{{ replace .Version "+" "-" }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge "
+
+release:
+  # Publish directly; "v1.7.1+go.2" is a build-metadata tag, not a pre-release.
+  prerelease: false
