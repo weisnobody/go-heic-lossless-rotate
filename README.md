@@ -6,7 +6,7 @@ re-encoding the image.
 
 This is a Go port of
 [heic-lossless-rotate](https://github.com/olegoz/heic-lossless-rotate) by Oleg
-Ostrozhansky. It is both:
+Ostrozhansky. Claude did the coding. It is both:
 
 - a **drop-in replacement** for the Python command-line tool: the same
   commands, flags, messages, and exit codes, and byte-identical output files,
