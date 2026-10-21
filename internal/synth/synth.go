@@ -67,6 +67,12 @@ type Options struct {
 	// more than one top-level 'mdat' box (rare in practice, but legal per
 	// ISO/IEC 14496-12).
 	ExtraMdat bool
+
+	// Go-only, for the mirror tests (synth_heic.py has no 'imir'). Imir, if
+	// non-nil, adds an 'imir' property with this content byte, associated
+	// after 'irot' - or before it, if ImirFirst.
+	Imir      *byte
+	ImirFirst bool
 }
 
 // DefaultOptions returns build_synthetic_heic's default arguments.
@@ -167,11 +173,24 @@ func BuildSyntheticHEIC(o Options) ([]byte, error) {
 	ispe := fullbox("ispe", 0, 0, cat(be32(100), be32(200)))
 	ipcoChildren := ispe
 	nProps := 1
-	irotIndex := 0
+	irotIndex, imirIndex := 0, 0
+	addImir := func() {
+		if o.Imir != nil {
+			ipcoChildren = cat(ipcoChildren, box("imir", []byte{*o.Imir}))
+			nProps++
+			imirIndex = nProps
+		}
+	}
+	if o.ImirFirst {
+		addImir()
+	}
 	if o.IncludeIrot {
 		ipcoChildren = cat(ipcoChildren, box("irot", []byte{byte(o.IrotValue & 0x3)}))
 		nProps++
 		irotIndex = nProps
+	}
+	if !o.ImirFirst {
+		addImir()
 	}
 	ipco := box("ipco", ipcoChildren)
 
@@ -180,8 +199,14 @@ func BuildSyntheticHEIC(o Options) ([]byte, error) {
 		essential bool
 	}
 	assocs := []assoc{{1, true}} // ispe
+	if imirIndex != 0 && o.ImirFirst {
+		assocs = append(assocs, assoc{imirIndex, true})
+	}
 	if o.IncludeIrot {
 		assocs = append(assocs, assoc{irotIndex, true})
+	}
+	if imirIndex != 0 && !o.ImirFirst {
+		assocs = append(assocs, assoc{imirIndex, true})
 	}
 	ipmaEntry := cat(be16(itemID), []byte{byte(len(assocs))})
 	for _, a := range assocs {

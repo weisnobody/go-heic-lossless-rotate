@@ -74,6 +74,22 @@ const FormatVersion = 2
 // -V and ReverseRotation's check can never drift out of sync.
 var SupportedReverseFormatVersions = []int{1, 2}
 
+// MirrorFormatVersion is the provenance format version of a record that
+// carries an OIMR entry - written only once this tool has inserted an 'imir'
+// (Go-only, COMPAT E2). Every other record stays FormatVersion, byte for
+// byte what Python writes, and Python refuses to reverse a v3 record rather
+// than leave the 'imir' behind. ParseProvenance accepts a v3 record only if
+// it has OIMR; reverse accepts it in addition to
+// SupportedReverseFormatVersions, which stays as -V reports it.
+const MirrorFormatVersion = 3
+
+// isMirrorRecord reports whether a record of this version is a valid
+// MirrorFormatVersion one.
+func isMirrorRecord(version uint8, entries ProvenanceEntries) bool {
+	_, ok := entries["OIMR"]
+	return version == MirrorFormatVersion && ok
+}
+
 // versionTuple parses Version ('MAJOR.MINOR.PATCH') into three small ints,
 // for compact fixed-width storage in the provenance record's TVER entry.
 // Fixed-width (1 byte each) is deliberate: it lets TVER update in place on
@@ -986,12 +1002,19 @@ func parseProvenanceEntries(data []byte, hdr BoxHeader, strictVersion bool) (uin
 		return 0, nil, 0, err
 	}
 	pos++
-	if strictVersion && version > FormatVersion {
-		return 0, nil, 0, provenanceErrorf("provenance box format version %d is newer than this "+
-			"script understands (max %d) - update heic-lossless-rotate", version, FormatVersion)
+	newer := provenanceErrorf("provenance box format version %d is newer than this "+
+		"script understands (max %d) - update heic-lossless-rotate", version, FormatVersion)
+	// Go-only (COMPAT E2): a v3 record is only known once its entries show
+	// OIMR; any other v3 record gets Python's error, as before.
+	deferCheck := strictVersion && version == MirrorFormatVersion
+	if strictVersion && version > FormatVersion && !deferCheck {
+		return 0, nil, 0, newer
 	}
 	entryCount, err := pyIndex(data, pos)
 	if err != nil {
+		if deferCheck {
+			return 0, nil, 0, newer
+		}
 		return 0, nil, 0, err
 	}
 	pos++
@@ -1001,11 +1024,17 @@ func parseProvenanceEntries(data []byte, hdr BoxHeader, strictVersion bool) (uin
 		pos += 4
 		length, err := unpackU32(data, pos)
 		if err != nil {
+			if deferCheck {
+				return 0, nil, 0, newer
+			}
 			return 0, nil, 0, err
 		}
 		pos += 4
 		entries[tag] = pybytes.SliceCopy(data, pos, pos+int(length)) // later duplicates win, as in a dict
 		pos += int(length)
+	}
+	if deferCheck && !isMirrorRecord(version, entries) {
+		return 0, nil, 0, newer
 	}
 	return version, entries, pos, nil
 }
@@ -1495,8 +1524,22 @@ func ApplyRotation(data []byte, deltaTurns int, opts RotateOptions) ([]byte, err
 // to edit (the whole file, or the streaming engine's meta+provenance span).
 // Go-only, for package stream.
 func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptions) ([]byte, error) {
+	return applyEdit(env, data, editOp{deltaTurns: deltaTurns}, opts)
+}
+
+// editOp is the edit applyEdit makes: a rotation, or (Go-only, COMPAT E2) a
+// flip.
+type editOp struct {
+	deltaTurns int
+	mirror     bool
+	axis       MirrorAxis
+}
+
+// applyEdit is apply_rotation's body, generalized (Go-only) to also flip
+// the image: ApplyMirrorEnv shares everything but the edit itself.
+func applyEdit(env FileEnv, data []byte, op editOp, opts RotateOptions) ([]byte, error) {
 	log := logger{opts.Log}
-	deltaTurns &= 0x3
+	deltaTurns := op.deltaTurns & 0x3
 
 	structInfo, err := LocateStructures(data)
 	if err != nil {
@@ -1578,6 +1621,17 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 	var pristineIrotByte byte
 	var pristineIpmaFlags uint32
 
+	// Go-only (COMPAT D8/E2): the orientation decoders display, which is
+	// more than the 'irot' value alone when the primary item has an 'imir'.
+	_, hasImir := findImirChild(primary, ipcoChildren)
+	var currentOrient, newOrient orient
+	if hasImir || op.mirror {
+		if currentOrient, err = composeOrient(data, primary.Assocs, ipcoChildren, -1, 0); err != nil {
+			return nil, err
+		}
+		newOrient = currentOrient.then(irotOrient(deltaTurns))
+	}
+
 	// ---- FAST PATH: existing irot already associated with primary item ----
 	// New value is the CURRENT value plus the requested delta, mod 4 - so
 	// the person rotating never needs to know the existing orientation.
@@ -1585,7 +1639,20 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 	var out []byte
 	fastPath := false
 	var currentTurns, newTurns int
-	if child, ok := findIrotChild(primary, ipcoChildren); ok {
+	insertedImir := false
+	if op.mirror { // Go-only (COMPAT E2): flip instead of rotating
+		m, err := mirrorEdit(env, data, structInfo, iprpState{ipcoHdr, ipmaHdr, ipcoChildren,
+			ipmaVersion, ipmaFlags, ipmaEntries, primary}, op.axis, currentOrient, existingProvenance, log)
+		if err != nil {
+			return nil, err
+		}
+		out, fastPath, insertedImir, newOrient = m.out, m.hadIrot, m.insertedImir, m.newOrient
+		if existingProvenance == nil {
+			// First-ever edit: the same pristine 'irot' state the paths
+			// below capture.
+			pristineIrotByte, pristineIpmaFlags = m.irotByte, ipmaFlags
+		}
+	} else if child, ok := findIrotChild(primary, ipcoChildren); ok {
 		fastPath = true
 		irotDataPos := child.ContentStart
 		b, err := pyIndex(data, irotDataPos)
@@ -1600,6 +1667,21 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 		}
 		currentTurns = int(b & 0x3)
 		newTurns = (currentTurns + deltaTurns) % 4
+		if hasImir { // Go-only (COMPAT D8): solve for the value that turns the display
+			naive := newTurns
+			var ok bool
+			if newTurns, ok, err = solveIrot(data, primary.Assocs, ipcoChildren, irotDataPos, newOrient); err != nil {
+				return nil, err
+			}
+			if !ok {
+				return nil, boxParseErrorf("internal error: no 'irot' value gives the requested orientation")
+			}
+			if newTurns != naive {
+				log.printf("[fast path] the primary item's 'imir' is applied after its 'irot', so "+
+					"turning the displayed image %d deg counter-clockwise takes 'irot' %d deg, not %d deg",
+					deltaTurns*90, newTurns*90, naive*90)
+			}
+		}
 		out = workingCopy(data)
 		if newTurns == currentTurns {
 			log.printf("[fast path] existing 'irot' = %d deg; delta %d deg leaves it "+
@@ -1612,7 +1694,7 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 	}
 
 	// ---- SLOW PATH: no irot property associated with primary item; insert one ----
-	if !fastPath {
+	if !fastPath && !op.mirror {
 		if existingProvenance == nil {
 			// First-ever edit, no 'irot' existed - the pre-insertion ipma
 			// flags are the pristine value we may need to restore on
@@ -1652,7 +1734,7 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 	// Only when the effective orientation actually changed - if the delta
 	// left it at the same value it already had (delta 0, most commonly),
 	// nothing that represents displayed orientation should be touched.
-	if !opts.NoExifSync && newTurns != currentTurns {
+	if !opts.NoExifSync && (newTurns != currentTurns || op.mirror) { // Go-only: a flip always changes it
 		// re-locate fresh against the (possibly resized) output buffer
 		infoNow, err := LocateStructures(out)
 		if err != nil {
@@ -1664,6 +1746,9 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 		}
 		if ok {
 			newExifOrientation := IrotToExifOrientation[newTurns]
+			if hasImir || op.mirror { // Go-only (COMPAT D8/E2): the whole orientation
+				newExifOrientation = uint16(newOrient)
+			}
 			if err := env.WriteExif(out, fieldNow, newExifOrientation); err != nil {
 				return nil, err
 			}
@@ -1683,6 +1768,9 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 			if v, ok := existingProvenance[tag]; ok {
 				entries[tag] = v
 			}
+		}
+		if v, ok := existingProvenance["OIMR"]; ok { // Go-only (COMPAT E2)
+			entries["OIMR"] = v
 		}
 		if oirt, ok := existingProvenance["OIRT"]; ok {
 			// Already v2 format - carry the leaner entries forward as-is.
@@ -1735,6 +1823,23 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 		entries["PCRC"] = binary.BigEndian.AppendUint32(nil, pcrc)
 	}
 
+	// Go-only (COMPAT E2): OIMR marks that this tool inserted an 'imir', so
+	// reverse knows to remove it. Recording it is also the first point the
+	// pristine 'ipma' flags matter if 'irot' already existed - and they are
+	// still the current flags then, since nothing was inserted before.
+	if insertedImir {
+		if _, ok := entries["OIMR"]; !ok {
+			entries["OIMR"] = []byte{}
+		}
+		if _, ok := entries["OIPF"]; !ok {
+			entries["OIPF"] = flagsBytes(ipmaFlags)
+		}
+	}
+	provVersion := uint8(FormatVersion)
+	if _, ok := entries["OIMR"]; ok {
+		provVersion = MirrorFormatVersion
+	}
+
 	// TVER: the version performing THIS update - a "who last updated this
 	// file" marker, freshly written on every edit rather than carried
 	// forward. ReverseRotation never writes it.
@@ -1768,7 +1873,7 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 	// placeholder-CCRC box gives the real box's size before the real CCRC
 	// (which depends on the fully-patched buffer) is known.
 	entries["CCRC"] = []byte{0, 0, 0, 0}
-	placeholderProvBox, err := BuildProvenanceBox(FormatVersion, entries)
+	placeholderProvBox, err := BuildProvenanceBox(provVersion, entries)
 	if err != nil {
 		return nil, err
 	}
@@ -1808,7 +1913,7 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 		return nil, err
 	}
 	entries["CCRC"] = binary.BigEndian.AppendUint32(nil, ccrc)
-	newProvBox, err := BuildProvenanceBox(FormatVersion, entries)
+	newProvBox, err := BuildProvenanceBox(provVersion, entries)
 	if err != nil {
 		return nil, err
 	}
@@ -1823,7 +1928,7 @@ func ApplyRotationEnv(env FileEnv, data []byte, deltaTurns int, opts RotateOptio
 	if len(existingProvenance) > 0 { // Python: `if existing_provenance` (dict truthiness)
 		action = "updated"
 	}
-	log.printf("[provenance] %s provenance record (format v%d, %d bytes)", action, FormatVersion, len(newProvBox))
+	log.printf("[provenance] %s provenance record (format v%d, %d bytes)", action, provVersion, len(newProvBox))
 
 	return out, nil
 }
@@ -1910,6 +2015,16 @@ func restoreMetaProvenanceSpan(span []byte, entries ProvenanceEntries, log logge
 	//     (OIRT length 0) removes the inserted property - always the LAST
 	//     ipco child, with its association always the LAST entry in the
 	//     primary item's ipma list - so no index bookkeeping was needed.
+	if _, ok := entries["OIMR"]; ok { // Go-only (COMPAT E2)
+		if span, err = restoreImir(span, info, entries, log); err != nil {
+			return nil, err
+		}
+		if info, err = LocateStructures(span); err != nil {
+			return nil, err
+		}
+		iprpHdr = info.IprpHdr
+		iprpStart, iprpCEnd = iprpHdr.Start, iprpHdr.ContentEnd
+	}
 	if pristineIprp, ok := entries["OPRP"]; ok {
 		span = pybytes.Splice(span, iprpStart, iprpCEnd, pristineIprp)
 		log.printf("[reverse] restored pristine 'iprp' from full v1 "+
@@ -2070,7 +2185,7 @@ func PrepareReversalEnv(env FileEnv, data []byte, ignoreTamper bool, w io.Writer
 	if err != nil {
 		return nil, err
 	}
-	if !slices.Contains(SupportedReverseFormatVersions, int(version)) {
+	if !slices.Contains(SupportedReverseFormatVersions, int(version)) && !isMirrorRecord(version, entries) {
 		supported := make([]string, len(SupportedReverseFormatVersions))
 		for i, v := range SupportedReverseFormatVersions {
 			supported[i] = strconv.Itoa(v)
@@ -2303,6 +2418,16 @@ type Info struct {
 	// isn't checkable with a plain whole-file CRC32 tool.)
 	PCRC                             *uint32
 	HasIlocSnapshot, HasExifSnapshot bool
+
+	// Go-only (COMPAT E2/D8): the whole displayed orientation - 'irot' and
+	// 'imir' together - numbered like the Exif Orientation tag (1-8). Set
+	// only when an 'imir' is involved: the primary item has one, or this
+	// tool has inserted one (OIMR). Otherwise they are nil, and the
+	// quarter-turn fields above tell the whole story, as in Python.
+	// OriginalOrientation and DeltaOrientation follow the quarter-turn
+	// fields' nil rule; DeltaOrientation is what this tool did, applied
+	// after the original.
+	CurrentOrientation, OriginalOrientation, DeltaOrientation *int
 }
 
 // GatherInfo is a read-only summary of heic-lossless-rotate's provenance
@@ -2320,6 +2445,9 @@ func GatherInfo(data []byte) (*Info, error) {
 		return nil, err
 	}
 	if info.ProvenanceHdr == nil {
+		if err := gatherOrientation(data, info, nil, result); err != nil { // Go-only (COMPAT D8)
+			return nil, err
+		}
 		return result, nil
 	}
 
@@ -2329,7 +2457,7 @@ func GatherInfo(data []byte) (*Info, error) {
 	}
 	result.HasProvenance = true
 	result.Version = version
-	result.VersionSupported = version <= FormatVersion && wellFormed
+	result.VersionSupported = (version <= FormatVersion || isMirrorRecord(version, entries)) && wellFormed
 	_, result.HasIlocSnapshot = entries["OILC"]
 	_, result.HasExifSnapshot = entries["OEXO"]
 
@@ -2353,6 +2481,10 @@ func GatherInfo(data []byte) (*Info, error) {
 		setOriginal(original)
 	}
 
+	if err := gatherOrientation(data, info, entries, result); err != nil { // Go-only (COMPAT E2/D8)
+		return nil, err
+	}
+
 	if _, ok := entries["PCRC"]; ok {
 		pcrc, err := entryU32(entries, "PCRC")
 		if err != nil {
@@ -2373,13 +2505,19 @@ func GatherInfo(data []byte) (*Info, error) {
 // never touched the file). Once a record exists it is always non-zero:
 // 1/2/3 for a cumulative rotation ADDED BY THIS TOOL of 90/180/270 deg, or
 // 4 if the tool's net contribution is 0 deg (e.g. rotate 0 was used just to
-// add tracking, or opposing rotations cancelled out).
+// add tracking, or opposing rotations cancelled out). Go-only (COMPAT E2): 5
+// if the tool's net contribution includes a flip.
 func FormatInfo(result *Info, quiet bool) (text string, exitCode int) {
 	currentDegrees := result.CurrentQuarterTurns * 90
 
 	if !result.HasProvenance {
 		text = "Not rotated with heic-lossless-rotate (no provenance record found)."
-		if result.CurrentQuarterTurns != 0 {
+		if o := result.CurrentOrientation; o != nil { // Go-only (COMPAT D8)
+			if *o != int(orientNormal) {
+				text += fmt.Sprintf("\nNote: the file currently has its own orientation "+
+					"of %s from elsewhere (not something this tool did).", orient(*o))
+			}
+		} else if result.CurrentQuarterTurns != 0 {
 			text += fmt.Sprintf("\nNote: the file currently has its own 'irot' value "+
 				"of %d deg from elsewhere (not something this tool did).", currentDegrees)
 		}
@@ -2403,7 +2541,9 @@ func FormatInfo(result *Info, quiet bool) (text string, exitCode int) {
 			"may be incomplete)", FormatVersion)
 	}
 	lines := []string{first + "."}
-	if result.DeltaQuarterTurns != nil {
+	if result.CurrentOrientation != nil { // Go-only (COMPAT E2/D8)
+		lines = append(lines, orientationLines(result)...)
+	} else if result.DeltaQuarterTurns != nil {
 		lines = append(lines,
 			fmt.Sprintf("  heic-lossless-rotate has added: %d deg", *result.DeltaQuarterTurns*90),
 			fmt.Sprintf("  file's rotation: %d deg originally -> %d deg now", *result.OriginalQuarterTurns*90, currentDegrees))
@@ -2429,6 +2569,9 @@ func FormatInfo(result *Info, quiet bool) (text string, exitCode int) {
 	exitCode = 4
 	if d := result.DeltaQuarterTurns; d != nil && *d != 0 {
 		exitCode = *d
+	}
+	if d := result.DeltaOrientation; d != nil { // Go-only (COMPAT E2/D8)
+		exitCode = orientExitCode(orient(*d))
 	}
 	if quiet {
 		return "", exitCode
