@@ -103,6 +103,26 @@ func crossCheck(t *testing.T, data []byte) (string, int) {
 			}
 		}
 	}
+	for _, axis := range []core.MirrorAxis{core.MirrorHorizontal, core.MirrorVertical} {
+		for _, sync := range []bool{true, false} {
+			var ml, sl bytes.Buffer
+			mo, merr := core.ApplyMirror(data, axis, core.RotateOptions{NoExifSync: !sync, Log: &ml})
+			v, serr := ApplyMirrorReaderAt(r, n, axis, core.RotateOptions{NoExifSync: !sync, Log: &sl})
+			settle(merr == nil)
+			op := fmt.Sprintf("mirror(%s, sync=%v)", axis, sync)
+			if d := compare(op, outcome{out: mo, log: ml.String(), err: errString(merr)},
+				outcome{out: viewBytes(t, v), log: sl.String(), err: errString(serr)}); d != "" {
+				return d, fallbacks
+			}
+			if v != nil {
+				a, b := errString(core.VerifyStructure(mo)), errString(VerifyStructureView(v))
+				settle(a == "")
+				if a != b {
+					return fmt.Sprintf("%s: VerifyStructure %q vs %q", op, a, b), fallbacks
+				}
+			}
+		}
+	}
 	for _, force := range []bool{false, true} {
 		var ml, sl bytes.Buffer
 		mo, merr := core.ReverseRotation(data, core.ReverseOptions{IgnoreTamper: force, Log: &ml})
@@ -139,6 +159,7 @@ type crossGroup struct {
 
 func crossCorpus(t *testing.T) []crossGroup {
 	synthIn, rotated, twice, legacy, tamper := map[string][]byte{}, map[string][]byte{}, map[string][]byte{}, map[string][]byte{}, map[string][]byte{}
+	mirrored, ownImir := map[string][]byte{}, map[string][]byte{}
 	for _, layout := range []synth.Layout{synth.MdatFirst, synth.MetaFirst} {
 		for _, irot := range []int{-1, 0, 1, 2, 3} {
 			for _, exif := range []string{"none", "end", "middle"} {
@@ -152,6 +173,18 @@ func crossCorpus(t *testing.T) []crossGroup {
 						}
 					})
 					synthIn[name] = d
+					m1 := mustMirror(t, d, core.MirrorHorizontal)
+					mirrored[name] = m1
+					mirrored[name+"/rot"] = tests.MustApply(t, m1, 1)
+					mirrored[name+"/unflipped"] = mustMirror(t, m1, core.MirrorHorizontal)
+					axis := byte(irot & 1)
+					ownImir[name] = tests.MustSynth(t, func(o *synth.Options) {
+						o.Layout, o.ExtraMdat, o.Imir, o.ImirFirst = layout, extra, &axis, extra
+						o.IncludeIrot, o.IrotValue = irot >= 0, max(irot, 0)
+						if exif != "none" {
+							o.IncludeExif, o.ExifOrientation, o.ExifPosition = true, 6, synth.ExifPosition(exif)
+						}
+					})
 					r1 := tests.MustApply(t, d, 1)
 					rotated[name] = r1
 					twice[name] = tests.MustApply(t, r1, 3)
@@ -186,6 +219,9 @@ func crossCorpus(t *testing.T) []crossGroup {
 		if r, err := core.ApplyRotation(d, 1, core.RotateOptions{}); err == nil {
 			crafted[name+"/rotated"] = r
 		}
+		if m, err := core.ApplyMirror(d, core.MirrorVertical, core.RotateOptions{}); err == nil {
+			crafted[name+"/mirrored"] = m
+		}
 	}
 	corrupt := map[string][]byte{}
 	for _, layout := range []synth.Layout{synth.MdatFirst, synth.MetaFirst} {
@@ -193,7 +229,7 @@ func crossCorpus(t *testing.T) []crossGroup {
 			d := tests.MustSynth(t, func(o *synth.Options) {
 				o.Layout, o.IncludeIrot, o.IncludeExif, o.ExifPosition = layout, irot, true, synth.ExifMiddle
 			})
-			for _, base := range [][]byte{d, tests.MustApply(t, d, 1)} {
+			for _, base := range [][]byte{d, tests.MustApply(t, d, 1), mustMirror(t, d, core.MirrorHorizontal)} {
 				for i := range base {
 					for _, m := range []byte{0xFF, 0x01} {
 						b := bytes.Clone(base)
@@ -211,6 +247,8 @@ func crossCorpus(t *testing.T) []crossGroup {
 		{"synth originals", synthIn, true},
 		{"synth rotated", rotated, true},
 		{"synth rotated twice", twice, true},
+		{"synth mirrored", mirrored, true},
+		{"synth own imir", ownImir, true},
 		{"legacy records", legacy, true},
 		{"tamper", tamper, true},
 		{"large", large, true},
@@ -247,4 +285,13 @@ func TestStreamMatchesBytesEngine(t *testing.T) {
 			t.Logf("%d inputs; %d streamed every successful operation; %d successful operations fell back", len(names), streamed, totalFallbacks)
 		})
 	}
+}
+
+func mustMirror(t *testing.T, data []byte, axis core.MirrorAxis) []byte {
+	t.Helper()
+	out, err := core.ApplyMirror(data, axis, core.RotateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

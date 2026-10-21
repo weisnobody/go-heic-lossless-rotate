@@ -79,6 +79,49 @@ func buildParser(prog string) *parser {
 		},
 	}
 
+	// Go-only (COMPAT E2): flip the image through its 'imir' property.
+	axisSet := func(a *args, value string) error {
+		if value != "horizontal" && value != "vertical" {
+			return fmt.Errorf("invalid choice: %s (choose from 'horizontal', 'vertical')", pyRepr(value))
+		}
+		a.axis = value
+		return nil
+	}
+	mirror := &parser{
+		prog: prog + " mirror", name: "mirror",
+		summary: "flip the image horizontally or vertically (Go-only)",
+		description: "Losslessly flip a HEIC/HEIF image as it currently " +
+			"displays, through the HEIF 'imir' property: " +
+			"'horizontal' mirrors it left-right, 'vertical' " +
+			"upside down. Like rotate, it applies ON TOP OF the " +
+			"current orientation: flipping twice the same way " +
+			"restores it. Reversible with `reverse`, like rotate. " +
+			"A file that already has its own 'imir' property " +
+			"(one this tool didn't add) can be rotated but not " +
+			"flipped. Go-only: the Python heic-lossless-rotate " +
+			"has no mirror command, and won't reverse a mirrored " +
+			"file.",
+		opts: []option{
+			help,
+			{"", "--no-exif-sync", kindFlag, "no_exif_sync", "don't sync the legacy embedded Exif Orientation tag"},
+			{"", "--dry-run", kindFlag, "dry_run", "do everything except write the output file: " +
+				"verify the flip can be performed, print " +
+				"diagnostics, and set the exit code accordingly"},
+			force,
+			quiet,
+		},
+		positionals: []positional{
+			{name: "axis", metavar: "{horizontal,vertical}", set: axisSet,
+				help: "'horizontal' flips left-right (mirrors about a " +
+					"vertical axis); 'vertical' flips upside down"},
+			{name: "input", set: inputSet, help: "input .heic file"},
+			{name: "output", optional: true, set: outputSet,
+				help: "output .heic file (default: <input>_mirrored.heic; " +
+					"or, if <input> ends with '_restored', that " +
+					"suffix is stripped instead of adding '_mirrored')"},
+		},
+	}
+
 	reverse := &parser{
 		prog: prog + " reverse", name: "reverse",
 		summary: "undo all heic-lossless-rotate edits, restoring the exact original file",
@@ -130,9 +173,10 @@ func buildParser(prog string) *parser {
 			"90/180/270 deg, or 4 if this tool's net " +
 			"contribution is 0 deg (e.g. `rotate 0` was used " +
 			"just to add tracking, or opposing rotations " +
-			"cancelled out). A genuine error " +
+			"cancelled out), or 5 if what this tool added " +
+			"includes a flip (Go-only: see `mirror`). A genuine error " +
 			fmt.Sprintf("(e.g. unreadable file) exits %d, ", core.ErrorExitCode) +
-			"kept outside 0-4 so it's never mistaken for a " +
+			"kept outside 0-5 so it's never mistaken for a " +
 			"rotation-state result.",
 		opts: []option{
 			help,
@@ -151,13 +195,13 @@ func buildParser(prog string) *parser {
 			{"-G", "--goversion", kindGoVersion, "", "show the Go port's own version, then exit (Go-only)"},
 			{"-q", "--quiet", kindFlag, "quiet", "suppress informational stdout messages " +
 				"(errors still go to stderr)"},
-			{"", "--dry-run", kindFlag, "dry_run", "for rotate/reverse: do everything except write " +
+			{"", "--dry-run", kindFlag, "dry_run", "for rotate/mirror/reverse: do everything except write " +
 				"the output file (no effect on info, which " +
 				"never writes a file anyway)"},
-			{"-f", "--force", kindFlag, "force", "for rotate/reverse: overwrite the output file " +
+			{"-f", "--force", kindFlag, "force", "for rotate/mirror/reverse: overwrite the output file " +
 				"if it already exists (refused by default)"},
 		},
-		subcommands: []*parser{rotate, reverse, info},
+		subcommands: []*parser{rotate, mirror, reverse, info},
 		version:     core.VersionString,
 		goVersion:   version.GoVersionString,
 	}
@@ -195,8 +239,8 @@ func insertImplicitRotate(argv []string) []string {
 // Main runs the CLI with argv (argv[0] is the program name) and returns the
 // process exit code (← main; Python calls sys.exit instead):
 //
-//	0       rotate/reverse succeeded, or -h/-V/-G
-//	0-4     info: see FormatInfo
+//	0       rotate/mirror/reverse succeeded, or -h/-V/-G
+//	0-5     info: see FormatInfo
 //	2       usage error, or no arguments at all (help is printed to stdout)
 //	10      a genuine error (core.ErrorExitCode)
 func Main(argv []string, stdout, stderr io.Writer) int {
@@ -271,9 +315,16 @@ func run(a *args, stdout io.Writer) (int, error) {
 		opts.Log = stdout
 	}
 	var err error
-	if a.cmd == "rotate" {
+	switch a.cmd {
+	case "rotate":
 		_, err = files.RotateFile(a.input, a.output, (a.rotation/90)%4, opts)
-	} else {
+	case "mirror": // Go-only (COMPAT E2)
+		axis := core.MirrorVertical
+		if a.axis == "horizontal" {
+			axis = core.MirrorHorizontal
+		}
+		_, err = files.MirrorFile(a.input, a.output, axis, opts)
+	default:
 		_, err = files.ReverseFile(a.input, a.output, opts)
 	}
 	return 0, err

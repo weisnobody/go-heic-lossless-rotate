@@ -71,6 +71,7 @@ type parser struct {
 type args struct {
 	cmd               string
 	rotation          int
+	axis              string // mirror only: "horizontal" or "vertical" (Go-only, COMPAT E2)
 	input             string
 	output            string // "" when absent, like Python's None (both mean "default")
 	quiet             bool
