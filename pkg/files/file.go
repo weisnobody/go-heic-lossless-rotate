@@ -30,12 +30,13 @@ import (
 	"github.com/weisnobody/go-heic-lossless-rotate/pkg/stream"
 )
 
-// FileOptions are RotateFile's and ReverseFile's options - the CLI's flags.
+// FileOptions are RotateFile's, MirrorFile's and ReverseFile's options - the
+// CLI's flags.
 // Fields that don't apply to a function are ignored.
 type FileOptions struct {
 	Force        bool      // overwrite an existing output (-f/--force)
 	DryRun       bool      // do everything except write the output (--dry-run)
-	NoExifSync   bool      // RotateFile only: don't sync the legacy Exif Orientation tag (--no-exif-sync)
+	NoExifSync   bool      // RotateFile and MirrorFile only: don't sync the legacy Exif Orientation tag (--no-exif-sync)
 	IgnoreTamper bool      // ReverseFile only: reverse despite a CCRC mismatch (--ignore-tamper-check)
 	Log          io.Writer // receives the CLI's informational lines; nil = silent (-q)
 }
@@ -113,13 +114,38 @@ func openInput(path string) (*input, error) {
 // exactly; a failed self-check is a *ProvenanceError and nothing is
 // written.
 func RotateFile(input, output string, deltaTurns int, opts FileOptions) (*Result, error) {
+	if output == "" {
+		output = DefaultRotateOutput(input)
+	}
+	return editFile("rotate", input, output, opts, func(r io.ReaderAt, size int64, o core.RotateOptions) (*stream.View, error) {
+		return stream.ApplyRotationReaderAt(r, size, deltaTurns, o)
+	})
+}
+
+// MirrorFile flips input as it currently displays - left-right for
+// core.MirrorHorizontal, upside down for core.MirrorVertical - and writes
+// the result to output ("" means DefaultMirrorOutput(input)), with the same
+// checks and write as RotateFile (Go-only, COMPAT E2).
+func MirrorFile(input, output string, axis core.MirrorAxis, opts FileOptions) (*Result, error) {
+	if output == "" {
+		output = DefaultMirrorOutput(input)
+	}
+	return editFile("mirror", input, output, opts, func(r io.ReaderAt, size int64, o core.RotateOptions) (*stream.View, error) {
+		return stream.ApplyMirrorReaderAt(r, size, axis, o)
+	})
+}
+
+// editFile is RotateFile's and MirrorFile's body: cmd names the edit in
+// messages.
+func editFile(cmd, input, output string, opts FileOptions,
+	edit func(io.ReaderAt, int64, core.RotateOptions) (*stream.View, error)) (*Result, error) {
 	in, err := openInput(input)
 	if err != nil {
 		return nil, err
 	}
 	defer in.close()
 	log := logger{opts.Log}
-	out, err := stream.ApplyRotationReaderAt(in.r, in.size, deltaTurns, core.RotateOptions{NoExifSync: opts.NoExifSync, Log: opts.Log})
+	out, err := edit(in.r, in.size, core.RotateOptions{NoExifSync: opts.NoExifSync, Log: opts.Log})
 	if err != nil {
 		return nil, err
 	}
@@ -134,18 +160,14 @@ func RotateFile(input, output string, deltaTurns int, opts FileOptions) (*Result
 	// tool claims to be able to reverse but actually can't.
 	if err := verifyReversibleHook(out); err != nil {
 		return nil, &core.ProvenanceError{
-			Msg: "post-rotate reversibility self-check failed - refusing " +
+			Msg: "post-" + cmd + " reversibility self-check failed - refusing " +
 				"to write output: " + errorMessage(err),
 			Err: err,
 		}
 	}
 	log.printf("[ok] reversibility self-check passed - output can be " +
 		"fully reversed back to the original file")
-
-	if output == "" {
-		output = DefaultRotateOutput(input)
-	}
-	return finishWrite("rotate", output, out, in, opts)
+	return finishWrite(cmd, output, out, in, opts)
 }
 
 // ReverseFile undoes every heic-lossless-rotate edit on input, writing the
@@ -237,6 +259,17 @@ func DefaultRotateOutput(input string) string {
 		return strings.TrimSuffix(stem, "_restored") + ".heic"
 	}
 	return stem + "_rotated.heic"
+}
+
+// DefaultMirrorOutput is mirror's default output path:
+// <input stem>_mirrored.heic - or, like DefaultRotateOutput, <stem> for an
+// input named <stem>_restored (Go-only, COMPAT E2).
+func DefaultMirrorOutput(input string) string {
+	stem := pathStem(input)
+	if strings.HasSuffix(stem, "_restored") {
+		return strings.TrimSuffix(stem, "_restored") + ".heic"
+	}
+	return stem + "_mirrored.heic"
 }
 
 // DefaultReverseOutput is reverse's default output path:

@@ -30,6 +30,10 @@
 // deltaTurns is taken modulo 4, so 3 or -1 is 90 degrees clockwise, and 0
 // changes nothing visible but adds or updates the tracking record.
 //
+// [ApplyMirror] (Go-only) flips the image left-right or upside down, as it
+// currently displays, through the 'imir' property, with the same tracking
+// and reversibility; see docs/COMPAT.md E2.
+//
 // The first edit stores a provenance record (a private 'uuid' box) holding
 // the file's pristine state and CRC32s. [ReverseRotation] uses it to undo
 // every edit at once, returning the byte-identical original, and refuses if

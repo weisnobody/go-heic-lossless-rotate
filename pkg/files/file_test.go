@@ -475,3 +475,53 @@ func TestFileAPIHeapBound(t *testing.T) {
 		})
 	}
 }
+
+// Go-only (COMPAT E2): MirrorFile.
+func TestMirrorFile(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "photo.heic")
+	original := writeSynth(t, in, nil)
+	res, err := MirrorFile(in, "", core.MirrorHorizontal, FileOptions{})
+	if err != nil || res.Output != filepath.Join(dir, "photo_mirrored.heic") || res.Size <= res.InputSize {
+		t.Fatalf("MirrorFile = %+v, %v", res, err)
+	}
+	want, err := core.ApplyMirror(original, core.MirrorHorizontal, core.RotateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(res.Output); !bytes.Equal(got, want) {
+		t.Error("MirrorFile output differs from core.ApplyMirror")
+	}
+	if _, err := ReverseFile(res.Output, "", FileOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "photo_mirrored_restored.heic")); !bytes.Equal(got, original) {
+		t.Error("reverse of a mirrored file is not the original")
+	}
+
+	real := verifyReversibleHook
+	t.Cleanup(func() { verifyReversibleHook = real })
+	verifyReversibleHook = func(*stream.View) error { return &core.ProvenanceError{Msg: "simulated failure"} }
+	out := filepath.Join(dir, "never.heic")
+	_, err = MirrorFile(in, out, core.MirrorVertical, FileOptions{})
+	var pe *core.ProvenanceError
+	if !errors.As(err, &pe) || pe.Msg != "post-mirror reversibility self-check failed - refusing to write output: simulated failure" {
+		t.Errorf("err = %v", err)
+	}
+	if fileExists(out) {
+		t.Error("mirror must not write anything if the self-check fails")
+	}
+}
+
+func TestDefaultMirrorOutput(t *testing.T) {
+	for in, want := range map[string]string{
+		"photo.heic":          "photo_mirrored.heic",
+		"dir/photo.HEIC":      "dir/photo_mirrored.heic",
+		"photo_restored.heic": "photo.heic",
+		".hidden":             ".hidden_mirrored.heic",
+	} {
+		if got := DefaultMirrorOutput(in); got != want {
+			t.Errorf("DefaultMirrorOutput(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
